@@ -1,17 +1,53 @@
 <div align="center">
   <h1>
     <br/>
-    🧙‍♂ RxJS️ Autorun
+    🧙‍♂️ RxJS️ Autorun 🧙‍♀️
     <br/>
-    <sub><sub>track(() => $(stream) + 1)</sub></sub>
+    <br/>
+    <img src="https://dev-to-uploads.s3.amazonaws.com/i/ts0dd1366mz4naczd55p.png" width="341px" />
     <br/>
     <br/>
   </h1>
 </div>
 
-💃 …
+Autorun re-evaluates given expression, whenever dependant observables emit
 
-## Example
+Tastes best with `BehaviorSubject`s
+
+**⚠️ WARNING:** use at your own risk!
+
+## 🔧 API
+
+- `run` returns an Observable that will emit evaluation resulst with each update
+
+- `autorun` internally subscribes to `run` and returns the subscription
+
+- `$(O)` tells `run` that it should be re-evaluated when `O` emits, with it's latest value
+
+- `_(O)` still provides latest value to `run`, but doesn't enforce re-evaluation with `O` emission
+
+See examples for more details
+
+## 💃 Examples
+
+Instant evaluation:
+
+```ts
+const o = of(1);
+const r = run(() => $(o));
+r.subscribe(console.log); // > 1
+```
+
+Delayed evaluation, when `o` emits:
+
+```ts
+const o = new Subject();
+const r = run(() => $(o));
+r.subscribe(console.log);
+o.next('🐈'); // > 🐈
+```
+
+Expression with two observables:
 
 ```ts
 const a = new BehaviorSubject('#');
