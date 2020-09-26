@@ -1,5 +1,5 @@
 import { of } from 'rxjs';
-import { run } from '../src';
+import { $, run } from '../src';
 
 describe('autorun', () => {
     let observer: {
@@ -18,15 +18,24 @@ describe('autorun', () => {
 
     test('Simple cold observable', () => {
         const o = of(1);
-        const r = run(($) => $(o));
+        const r = run(() => $(o));
         r.subscribe(observer);
         expect(observer.next.mock.calls).toEqual([[1]]);
     });
 
-    it('should complete with tracked observables', () => {
+    test('Dependent runners', () => {
         const o = of(1);
-        const r = run(($) => $(o));
-        r.subscribe(observer);
-        expect(observer.complete.mock.calls.length).toBe(1);
+        const r1 = run(() => $(o));
+        const r2 = run(() => $(r1));
+        r2.subscribe(observer);
+        expect(observer.next.mock.calls).toEqual([[1]]);
     });
+
+    // TODO: implement this
+    // it('should complete with tracked observables', () => {
+    //     const o = of(1);
+    //     const r = run(() => $(o));
+    //     r.subscribe(observer);
+    //     expect(observer.complete.mock.calls.length).toBe(1);
+    // });
 });

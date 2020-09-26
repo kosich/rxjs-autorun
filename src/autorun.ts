@@ -11,7 +11,7 @@ interface TrackEntry<V> {
 const ERROR_STUB = Object.create(null);
 
 type $Fn = <T>(o: Observable<T>) => T;
-type Cb<T> = (s: $Fn) => T;
+type Cb<T> = () => T;
 
 export function autorun<T>(fn: Cb<T>) {
     return run<T>(fn).subscribe();
@@ -26,8 +26,10 @@ export function run<T>(fn: Cb<T>): Observable<T> {
             .pipe(
                 startWith(void 0), // run fn() instantly
                 switchMap(() => {
+                    const _$ = run['$'];
+                    run['$'] = $;
                     try {
-                        return of(fn($));
+                        return of(fn());
                     } catch (e) {
                         // rethrow original errors
                         if (e != ERROR_STUB) {
@@ -35,6 +37,8 @@ export function run<T>(fn: Cb<T>): Observable<T> {
                         }
 
                         return EMPTY;
+                    } finally {
+                        run['$'] = _$;
                     }
                 }),
             )
@@ -95,3 +99,5 @@ export function run<T>(fn: Cb<T>): Observable<T> {
         }
     }
 }
+
+export const $:$Fn = o => run['$'](o);
