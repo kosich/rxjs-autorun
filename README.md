@@ -1,21 +1,27 @@
 <div align="center">
   <h1>
     <br/>
-    🧙‍♂
+    🧙‍♂ RxJS️ Autorun
     <br/>
-    <sub><sub>RxJS️ Autorun</sub></sub>
-    <br/>
-    <br/>
-    <a href="https://www.npmjs.com/package/rxjs-autorun"><img src="https://img.shields.io/npm/v/rxjs-autorun" alt="NPM"></a>
-    <a href="https://bundlephobia.com/result?p=rxjs-autorun@latest"><img src="https://img.shields.io/bundlephobia/minzip/rxjs-autorun?label=gzipped" alt="Bundlephobia"></a>
-    <a href="https://opensource.org/licenses/MIT" rel="nofollow"><img src="https://img.shields.io/npm/l/rxjs-autorun" alt="MIT license"></a>
-    <br/>
+    <sub><sub>track(() => $(stream) + 1)</sub></sub>
     <br/>
     <br/>
   </h1>
 </div>
 
 💃 …
+
+## Example
+
+```ts
+const a = new BehaviorSubject('#');
+const b = new BehaviorSubject(1);
+const c = run(() => _(a) + $(b));
+
+c.subscribe(observer); // > #1
+a.next('💡'); // ~no update~
+b.next(42); // > 💡42
+```
 
 ## 🤝 Want to contribute to this project?
 
