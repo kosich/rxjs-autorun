@@ -1,5 +1,5 @@
 import { EMPTY, Observable, of, Subject, Subscription } from 'rxjs';
-import { startWith, switchMap } from 'rxjs/operators';
+import { distinctUntilChanged, startWith, switchMap } from 'rxjs/operators';
 
 interface TrackEntry<V> {
     hasValue: boolean;
@@ -50,6 +50,7 @@ export function run<T>(fn: Cb<T>): Observable<T> {
                         context._ = prev_;
                     }
                 }),
+                distinctUntilChanged(),
             )
             .subscribe(observer);
 
@@ -83,29 +84,24 @@ export function run<T>(fn: Cb<T>): Observable<T> {
             };
 
             let isAsync = false;
-            v.subscription = o.subscribe((value) => {
-                if (isAsync) {
-                    // a-la distinct until changed
-                    if (v.hasValue && Object.is(v.value, value)) {
-                        return;
-                    }
+            v.subscription = o
+                .pipe(distinctUntilChanged())
+                .subscribe((value) => {
+                    v.hasValue = true;
+                    v.value = value;
 
-                    v.hasValue = true;
-                    v.value = value;
-                    if (track) {
-                        update$.next(void 0);
-                    } else {
-                        // NOTE: what to do if the value is absent?
-                        // should we:
-                        // - interrupt computation & w scheduling re-run when first value available
-                        // - interrupt computation & w/o scheduling re-run
-                        // - continue computation w/ undefined as value of _(o)
+                    if (isAsync) {
+                        if (track) {
+                            update$.next(void 0);
+                        } else {
+                            // NOTE: what to do if the silenced value is absent?
+                            // should we:
+                            // - interrupt computation & w scheduling re-run when first value available
+                            // - interrupt computation & w/o scheduling re-run
+                            // - continue computation w/ undefined as value of _(o)
+                        }
                     }
-                } else {
-                    v.hasValue = true;
-                    v.value = value;
-                }
-            });
+                });
             isAsync = true;
 
             deps.set(o, v);
