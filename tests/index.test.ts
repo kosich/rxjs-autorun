@@ -95,6 +95,28 @@ describe('autorun', () => {
         expect(observer.next.mock.calls.length).toBe(1);
     });
 
+    it('should interrupt expression midflight', () => {
+        const o = new Subject<number>();
+        const fn = jest.fn(() => 0);
+        const r = run(() => fn() + $(o));
+        sub = r.subscribe(observer);
+        expect(fn.mock.calls.length).toBe(1);
+        expect(observer.next.mock.calls.length).toBe(0);
+        o.next(0);
+        expect(fn.mock.calls.length).toBe(2);
+        expect(observer.next.mock.calls.length).toBe(1);
+    });
+
+    // this might not be desired behavior
+    it('will skip sync emissions', () => {
+        const o = of('a', 'b', 'c');
+        const r = run(() => $(o));
+        sub = r.subscribe(observer);
+        expect(observer.next.mock.calls).toEqual([['c']]);
+    });
+
+    // TODO: cover logic branching w/ late subscription
+
     // TODO: implement this
     // it('should complete with tracked observables', () => {
     //     const o = of(1);

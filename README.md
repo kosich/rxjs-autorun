@@ -12,7 +12,7 @@
 
 Autorun re-evaluates given expression, whenever dependant observables emit
 
-Tastes best with `BehaviorSubject`s
+Tastes best with Observables that always contain a value, such as `BehaviorSubject`s, `of`, `startWith`, etc.
 
 **⚠️ WARNING:** use at your own risk!
 
@@ -58,6 +58,69 @@ c.subscribe(observer); // > #1
 a.next('💡'); // ~no update~
 b.next(42); // > 💡42
 ```
+
+## ⚠️ Precautions
+
+### Sideeffects
+
+If an observable doesn't emit a synchronous value when it is subscribed, the expression will be **interrupted midflight** until observable emits.
+Therefore side-effects are dangerous inside `run`. E.g:
+
+```ts
+const o = new Subject();
+run(() => {
+  console.log('Hello'); // perform a side-effect
+  return $(o);          // will fail here since o has not emitted yet
+}).subscribe(console.log);
+o.next('World');
+
+/** OUTPUT:
+ * > Hello
+ * > Hello
+ * > World
+ */
+```
+
+*We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to handle this*
+
+### Logic branching
+
+Logic branching might lead to late subscription & unpredictable results:
+
+```ts
+const a = timer(0, 1000).pipe( take(2) );
+const b = timer(0, 1000).pipe( take(2) );
+
+run(() => {
+  if ($(a) % 2) return $(b);
+  return $(a);
+})
+.subscribe(console.log);
+
+/** OUTPUT:
+ * > 0
+ * > 0
+ * > 1
+ */
+```
+
+*We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to handle this*
+
+### Synchronous values skipping
+
+Currently `run` might skip sync emissions and run only with latest value emmitted, e.g.:
+
+```ts
+const o = of('a', 'b', 'c');
+
+run(() => $(o)).subscribe(console.log);
+
+/** OUTPUT:
+ * > c
+ */
+```
+
+*This will probably be fixed in future updates*
 
 ## 🤝 Want to contribute to this project?
 
