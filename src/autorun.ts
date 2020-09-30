@@ -83,6 +83,14 @@ export function run<T>(fn: Cb<T>): Observable<T> {
                 subscription: void 0,
             };
 
+            // NOTE: we will synchronously (immediately) evaluate observables
+            // that can synchronously emit a value. Such observables as:
+            // - of(…)
+            // - timer(0, …)
+            // - o.pipe( startWith(…) )
+            // - BehaviorSubject
+            // - ReplaySubject
+            // - etc
             let isAsync = false;
             v.subscription = o
                 .pipe(distinctUntilChanged())
