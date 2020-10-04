@@ -1,10 +1,12 @@
 import { EMPTY, Observable, of, Subject, Subscription } from 'rxjs';
-import { distinctUntilChanged, startWith, switchMap } from 'rxjs/operators';
+import { distinctUntilChanged, startWith, switchMap, takeWhile } from 'rxjs/operators';
 
 interface TrackEntry<V> {
     hasValue: boolean;
     value?: V;
     subscription?: Subscription;
+    track: boolean;
+    completed: boolean;
 }
 
 const ERROR_STUB = Object.create(null);
@@ -12,6 +14,11 @@ const ERROR_STUB = Object.create(null);
 type $FnT<T> = (o: Observable<T>) => T;
 type $Fn = <T>(o: Observable<T>) => T;
 type Cb<T> = (...args: any[]) => T;
+
+enum Update {
+    Value,
+    Completion
+};
 
 export function autorun<T>(fn: Cb<T>) {
     return run<T>(fn).subscribe();
@@ -28,33 +35,48 @@ const context: Context = {
 
 export function run<T>(fn: Cb<T>): Observable<T> {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
-    const update$ = new Subject<void>();
+    const update$ = new Subject<Update>();
     const $ = createTracker(true);
     const _ = createTracker(false);
+
+    const anyDepRunning = () => {
+        for (let dep of deps.values()) {
+            if (dep.track && !dep.completed) {
+                // One of the $-tracked deps is still running
+                return true;
+            }
+        }
+        // All $-tracked deps completed
+        return false;
+    }
+
+    const runFn = () => {
+        const prev$ = context.$;
+        const prev_ = context._;
+        context.$ = $;
+        context._ = _;
+        try {
+            return of(fn());
+        } catch (e) {
+            // rethrow original errors
+            if (e != ERROR_STUB) {
+                throw e;
+            }
+
+            return EMPTY;
+        } finally {
+            context.$ = prev$;
+            context._ = prev_;
+        }
+    };
 
     return new Observable((observer) => {
         const sub = update$
             .pipe(
-                startWith(void 0), // run fn() instantly
-                switchMap(() => {
-                    const prev$ = context.$;
-                    const prev_ = context._;
-                    context.$ = $;
-                    context._ = _;
-                    try {
-                        return of(fn());
-                    } catch (e) {
-                        // rethrow original errors
-                        if (e != ERROR_STUB) {
-                            throw e;
-                        }
-
-                        return EMPTY;
-                    } finally {
-                        context.$ = prev$;
-                        context._ = prev_;
-                    }
-                }),
+                // run fn() and completion checker instantly
+                startWith(Update.Value, Update.Completion),
+                takeWhile(u => u !== Update.Completion || anyDepRunning()),
+                switchMap(u => u === Update.Value ? runFn() : EMPTY),
                 distinctUntilChanged(),
             )
             .subscribe(observer);
@@ -75,6 +97,12 @@ export function run<T>(fn: Cb<T>): Observable<T> {
         return function $<O>(o: Observable<O>): O {
             if (deps.has(o)) {
                 const v = deps.get(o)!;
+                if (track && !v.track) {
+                    // Previously tracked with _, but now also with $.
+                    // So completed state becomes relevant now.
+                    // Happens in case of e.g. run(() => _(o) + $(o))
+                    v.track = true;
+                }
                 if (v.hasValue) {
                     return v.value as O;
                 } else {
@@ -86,6 +114,8 @@ export function run<T>(fn: Cb<T>): Observable<T> {
                 hasValue: false,
                 value: void 0,
                 subscription: void 0,
+                track,
+                completed: false,
             };
 
             // NOTE: we will synchronously (immediately) evaluate observables
@@ -99,19 +129,27 @@ export function run<T>(fn: Cb<T>): Observable<T> {
             let isAsync = false;
             v.subscription = o
                 .pipe(distinctUntilChanged())
-                .subscribe((value) => {
-                    v.hasValue = true;
-                    v.value = value;
+                .subscribe({
+                    next: (value) => {
+                        v.hasValue = true;
+                        v.value = value;
 
-                    if (isAsync) {
-                        if (track) {
-                            update$.next(void 0);
-                        } else {
-                            // NOTE: what to do if the silenced value is absent?
-                            // should we:
-                            // - interrupt computation & w scheduling re-run when first value available
-                            // - interrupt computation & w/o scheduling re-run
-                            // - continue computation w/ undefined as value of _(o)
+                        if (isAsync) {
+                            if (track) {
+                                update$.next(Update.Value);
+                            } else {
+                                // NOTE: what to do if the silenced value is absent?
+                                // should we:
+                                // - interrupt computation & w scheduling re-run when first value available
+                                // - interrupt computation & w/o scheduling re-run
+                                // - continue computation w/ undefined as value of _(o)
+                            }
+                        }
+                    },
+                    complete: () => {
+                        v.completed = true;
+                        if (isAsync && track) {
+                            update$.next(Update.Completion);
                         }
                     }
                 });
