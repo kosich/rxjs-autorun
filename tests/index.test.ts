@@ -1,20 +1,24 @@
-import { BehaviorSubject, of, Subject, Subscription, throwError } from 'rxjs';
+import { BehaviorSubject, defer, of, Subject, Subscription, throwError } from 'rxjs';
 import { $, run, _ } from '../src';
 
 describe('autorun', () => {
-    let observer: {
+
+    type MockObserver = {
         next: jest.Mock;
         error: jest.Mock;
         complete: jest.Mock;
     };
+
+    const makeObserver = (): MockObserver => ({
+        next: jest.fn(),
+        error: jest.fn(),
+        complete: jest.fn(),
+    });
+    let observer: MockObserver;
     let sub: Subscription;
 
     beforeEach(() => {
-        observer = {
-            next: jest.fn(),
-            error: jest.fn(),
-            complete: jest.fn(),
-        };
+        observer = makeObserver();
     });
 
     afterEach(() => {
@@ -233,6 +237,109 @@ describe('autorun', () => {
 
             expect(observer.next).not.toBeCalled();
             expect(observer.error).toHaveBeenCalledWith('Byebye');
+        });
+    });
+
+    describe('multiple subscribers', () => {
+        it('should subscribe twice', () => {
+            let count = 0;
+            const o = defer(() => of(++count));
+            const r = run(() => $(o));
+
+            r.subscribe();
+            r.subscribe();
+            expect(count).toBe(2);
+        });
+
+        it('can be subscribed multiple times', () => {
+            const o = new BehaviorSubject(1);
+            const o2 = new BehaviorSubject(2);
+            const observer2 = makeObserver();
+            const r = run(() => $(o) + _(o2));
+
+            sub = new Subscription();
+            sub.add(r.subscribe(observer));
+            expect(observer.next).toBeCalledWith(3);
+            expect(observer2.next).not.toHaveBeenCalled();
+
+            o.next(3);
+            expect(observer.next).toBeCalledWith(5);
+            expect(observer.next).toBeCalledTimes(2);
+            expect(observer2.next).not.toHaveBeenCalled();
+
+            sub.add(r.subscribe(observer2));
+            expect(observer.next).toBeCalledWith(5);
+            expect(observer.next).toBeCalledTimes(2);
+            expect(observer.complete).not.toHaveBeenCalled();
+            expect(observer2.next).toBeCalledWith(5);
+            expect(observer2.next).toBeCalledTimes(1);
+            expect(observer2.complete).not.toHaveBeenCalled();
+
+            o.complete();
+            expect(observer.next).toBeCalledWith(5);
+            expect(observer.next).toBeCalledTimes(2);
+            expect(observer.complete).toHaveBeenCalled();
+            expect(observer2.next).toBeCalledWith(5);
+            expect(observer2.next).toBeCalledTimes(1);
+            expect(observer2.complete).toHaveBeenCalled();
+        });
+
+        it('subscribes upstream obserables multiple times', () => {
+            let counter = 0;
+            const o = defer(() => new BehaviorSubject(++counter));
+            const observer2 = makeObserver();
+            const r = run(() => $(o));
+
+            sub = new Subscription();
+            sub.add(r.subscribe(observer));
+            expect(observer.next).toBeCalledWith(1);
+
+            sub.add(r.subscribe(observer2));
+            expect(observer2.next).toBeCalledWith(2);
+        });
+
+        it('subscriptions complete independently', () => {
+            let counter = 0;
+            const os = [new BehaviorSubject(1), new BehaviorSubject(2)];
+            const o = defer(() => os[counter++]);
+            const observer2 = makeObserver();
+            const r = run(() => $(o));
+
+            sub = new Subscription();
+            sub.add(r.subscribe(observer));
+            sub.add(r.subscribe(observer2));
+            expect(observer.complete).not.toBeCalled();
+            expect(observer2.complete).not.toBeCalled();
+
+            os[0].complete();
+            expect(observer.complete).toBeCalled();
+            expect(observer2.complete).not.toBeCalled();
+
+            os[1].complete();
+            expect(observer.complete).toBeCalled();
+            expect(observer2.complete).toBeCalled();
+        });
+
+        it('subscriptions error out independently', () => {
+            let counter = 0;
+            const os = [new BehaviorSubject(1), new BehaviorSubject(2)];
+            const o = defer(() => os[counter++]);
+            const observer2 = makeObserver();
+            const r = run(() => $(o));
+
+            sub = new Subscription();
+            sub.add(r.subscribe(observer));
+            sub.add(r.subscribe(observer2));
+            expect(observer.error).not.toBeCalled();
+            expect(observer2.error).not.toBeCalled();
+
+            os[0].error('First error');
+            expect(observer.error).toBeCalledWith('First error');
+            expect(observer2.error).not.toBeCalled();
+
+            os[1].error('Second error');
+            expect(observer.error).toBeCalledWith('First error');
+            expect(observer2.error).toBeCalledWith('Second error');
         });
     });
 
