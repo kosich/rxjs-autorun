@@ -3,12 +3,13 @@ import { distinctUntilChanged, startWith, switchMap } from 'rxjs/operators';
 
 interface TrackEntry<V> {
     hasValue: boolean;
-    value: V;
-    subscription: Subscription;
+    value?: V;
+    subscription?: Subscription;
 }
 
 const ERROR_STUB = Object.create(null);
 
+type $FnT<T> = (o: Observable<T>) => T;
 type $Fn = <T>(o: Observable<T>) => T;
 type Cb<T> = (...args: any[]) => T;
 
@@ -16,7 +17,11 @@ export function autorun<T>(fn: Cb<T>) {
     return run<T>(fn).subscribe();
 }
 
-const context = {
+type Context = {
+    _?: $Fn,
+    $?: $Fn
+}
+const context: Context = {
     _: void 0,
     $: void 0,
 };
@@ -57,7 +62,7 @@ export function run<T>(fn: Cb<T>): Observable<T> {
         // destroy all subscriptions
         sub.add(() => {
             deps.forEach((entry) => {
-                entry.subscription.unsubscribe();
+                entry.subscription?.unsubscribe();
             });
             update$.complete();
             deps.clear();
@@ -69,7 +74,7 @@ export function run<T>(fn: Cb<T>): Observable<T> {
     function createTracker(track: boolean) {
         return function $<O>(o: Observable<O>): O {
             if (deps.has(o)) {
-                const v = deps.get(o);
+                const v = deps.get(o)!;
                 if (v.hasValue) {
                     return v.value as O;
                 } else {
@@ -115,7 +120,8 @@ export function run<T>(fn: Cb<T>): Observable<T> {
             deps.set(o, v);
 
             if (v.hasValue) {
-                return v.value;
+                // Must have value because v.hasValue is true
+                return v.value!;
             } else {
                 throw ERROR_STUB;
             }
@@ -123,5 +129,12 @@ export function run<T>(fn: Cb<T>): Observable<T> {
     }
 }
 
-export const $: $Fn = (o) => context.$(o);
-export const _: $Fn = (o) => context._(o);
+const tryApply = <T>(f: $FnT<T> | undefined, o: Observable<T>) => {
+    if (!f) {
+        throw new Error('$ or _ can only be called within a run() context');
+    }
+    return f(o);
+}
+
+export const $: $Fn = <T>(o: Observable<T>) => tryApply<T>(context.$, o);
+export const _: $Fn = <T>(o: Observable<T>) => tryApply<T>(context._, o);
