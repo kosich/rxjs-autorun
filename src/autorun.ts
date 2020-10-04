@@ -1,4 +1,4 @@
-import { EMPTY, Observable, of, Subject, Subscription } from 'rxjs';
+import { EMPTY, Observable, of, Subject, Subscription, throwError } from 'rxjs';
 import { distinctUntilChanged, startWith, switchMap, takeWhile } from 'rxjs/operators';
 
 interface TrackEntry<V> {
@@ -39,6 +39,9 @@ export function run<T>(fn: Cb<T>): Observable<T> {
     const $ = createTracker(true);
     const _ = createTracker(false);
 
+    let error: any;
+    let hasError = false;
+
     const anyDepRunning = () => {
         for (let dep of deps.values()) {
             if (dep.track && !dep.completed) {
@@ -51,6 +54,9 @@ export function run<T>(fn: Cb<T>): Observable<T> {
     }
 
     const runFn = () => {
+        if (hasError) {
+            return throwError(error);
+        }
         const prev$ = context.$;
         const prev_ = context._;
         context.$ = $;
@@ -62,8 +68,7 @@ export function run<T>(fn: Cb<T>): Observable<T> {
             if (e != ERROR_STUB) {
                 throw e;
             }
-
-            return EMPTY;
+            return hasError ? throwError(error) : EMPTY;
         } finally {
             context.$ = prev$;
             context._ = prev_;
@@ -144,6 +149,13 @@ export function run<T>(fn: Cb<T>): Observable<T> {
                                 // - interrupt computation & w/o scheduling re-run
                                 // - continue computation w/ undefined as value of _(o)
                             }
+                        }
+                    },
+                    error: e => {
+                        error = e;
+                        hasError = true;
+                        if (isAsync) {
+                            update$.next(Update.Value);
                         }
                     },
                     complete: () => {

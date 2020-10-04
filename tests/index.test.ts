@@ -1,4 +1,4 @@
-import { BehaviorSubject, of, Subject, Subscription } from 'rxjs';
+import { BehaviorSubject, of, Subject, Subscription, throwError } from 'rxjs';
 import { $, run, _ } from '../src';
 
 describe('autorun', () => {
@@ -182,6 +182,57 @@ describe('autorun', () => {
 
             expect(observer.next).toBeCalledWith(3);
             expect(observer.complete).toHaveBeenCalled();
+        });
+    });
+
+    describe('error', () => {
+        it('errors out when one of the deps errors out', () => {
+            const o = new BehaviorSubject(1);
+            const o2 = new BehaviorSubject(2);
+            const r = run(() => $(o) + $(o2));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(3);
+            expect(observer.error).not.toHaveBeenCalled();
+
+            o2.error('Some failure');
+            expect(observer.error).toHaveBeenCalledWith('Some failure');
+        });
+
+        it('errors out even when error value is undefined', () => {
+            const o = new BehaviorSubject(1);
+            const r = run(() => $(o));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(1);
+            expect(observer.error).not.toHaveBeenCalled();
+
+            o.error(void 0);
+            expect(observer.error).toHaveBeenCalledWith(void 0);
+        });
+
+        it('also considers untracked observable errors', () => {
+            const o = new BehaviorSubject(1);
+            const o2 = new BehaviorSubject(2);
+            const r = run(() => $(o) + _(o2));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(3);
+            expect(observer.error).not.toHaveBeenCalled();
+
+            // Untracked observer errors out
+            o2.error('Byebye');
+            expect(observer.error).toHaveBeenCalledWith('Byebye');
+        });
+
+        it('completes correctly when deps error out synchronously', () => {
+            const o = of(1);
+            const o2 = throwError('Byebye');
+            const r = run(() => $(o) + $(o2));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).not.toBeCalled();
+            expect(observer.error).toHaveBeenCalledWith('Byebye');
         });
     });
 
