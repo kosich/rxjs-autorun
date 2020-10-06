@@ -6,6 +6,7 @@ interface TrackEntry<V> {
     value?: V;
     subscription?: Subscription;
     track: boolean;
+    used: boolean;
     completed: boolean;
 }
 
@@ -57,9 +58,10 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
         if (hasError) {
             return throwError(error);
         }
-        // Mark all deps as untracked
+        // Mark all deps as untracked and unused
         for (let dep of deps.values()) {
             dep.track = false;
+            dep.used = false;
         }
         const prev$ = context.$;
         const prev_ = context._;
@@ -76,6 +78,14 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
         } finally {
             context.$ = prev$;
             context._ = prev_;
+            // Remove all unused deps
+            for (let [key, { used, subscription }] of deps.entries()) {
+                if (used) {
+                    continue;
+                }
+                subscription?.unsubscribe();
+                deps.delete(key);
+            }
         }
     };
 
@@ -102,6 +112,7 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
         return function $<O>(o: Observable<O>): O {
             if (deps.has(o)) {
                 const v = deps.get(o)!;
+                v.used = true;
                 if (track && !v.track) {
                     // Previously tracked with _, but now also with $.
                     // So completed state becomes relevant now.
@@ -120,6 +131,7 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
                 value: void 0,
                 subscription: void 0,
                 track,
+                used: true,
                 completed: false,
             };
 

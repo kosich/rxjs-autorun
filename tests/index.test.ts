@@ -1,4 +1,4 @@
-import { BehaviorSubject, defer, of, Subject, Subscription, throwError } from 'rxjs';
+import { BehaviorSubject, defer, Observable, of, Subject, Subscription, throwError } from 'rxjs';
 import { $, run, _ } from '../src';
 
 describe('autorun', () => {
@@ -429,6 +429,89 @@ describe('autorun', () => {
             o2.next(4);
             expect(observer.next).toBeCalledWith(5); // 1 (o3) + 4 (o2)
             expect(counter).toEqual(5);
+        });
+
+        it('unsubscribes a dep when it is not relevant any longer due to branching', () => {
+            let isO2Subscribed = false;
+            let counter = 0;
+            const o = new BehaviorSubject(1);
+            const o2 = new Observable(obs => {
+                isO2Subscribed = true;
+                obs.next(1);
+                return () => isO2Subscribed = false;
+            });
+            const r = run(() => {
+                ++counter;
+                // When o is odd, o2 is tracked
+                // When o is even, o2 is not tracked and should be unsubscribed
+                return $(o) % 2 ? $(o2) : -1;
+            });
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(1);
+            expect(counter).toEqual(1);
+            expect(isO2Subscribed).toBeTruthy();
+
+            // Becomes unused, so will be unsubscribed.
+            o.next(2);
+            expect(observer.next).toBeCalledWith(-1);
+            expect(counter).toEqual(2);
+            expect(isO2Subscribed).toBeFalsy();
+
+            // Becomes used again, so will be subscribed.
+            o.next(1);
+            expect(observer.next).toBeCalledWith(1);
+            expect(counter).toEqual(3);
+            expect(isO2Subscribed).toBeTruthy();
+        });
+
+        it('unsubscribes a dep when it becomes unreachable due to late subscription', () => {
+            let isO2Subscribed = false;
+            let counter = 0;
+            // o is the discriminator. It determines whether o3 is observed
+            const o  = new BehaviorSubject(0);
+            // o2 is the detector. It detects whether it is observed or not
+            const o2 = new Observable<number>(obs => {
+                isO2Subscribed = true;
+                obs.next(1);
+                return () => isO2Subscribed = false;
+            });
+            // o3 is the late emitter. It doesn't emit immediately
+            const o3 = new Subject<number>();
+            const r = run(() => {
+                ++counter;
+                const n = $(o) % 2 ? $(o3) : -1;
+                return n + $(o2);
+            });
+            sub = r.subscribe(observer);
+
+            // o3 not subscribed yet. No problem.
+            expect(observer.next).toBeCalledWith(0); // -1 + 1
+            expect(counter).toEqual(1);
+            expect(isO2Subscribed).toBeTruthy();
+
+            // Will start to observe late emitter o3 now.
+            // It doesn't have a value yet so the expression will be aborted.
+            // Note that o2 will be unsubscribed now. I think this is correct
+            // behavior, because for the moment, a new value in o2 would not
+            // be able to change the outcome of the expression, so it becomes
+            // irrelevant.
+            o.next(1);
+            expect(observer.next).toBeCalledWith(0); // No change
+            expect(counter).toEqual(2);
+            expect(isO2Subscribed).toBeFalsy(); // Is now unsubscribed
+
+            // Will abort again cause o3 still doesn't have a value
+            o.next(3);
+            expect(observer.next).toBeCalledWith(0); // No change
+            expect(counter).toEqual(3);
+            expect(isO2Subscribed).toBeFalsy(); // Still unsubscribed
+
+            // o3 now has a value, so o2 will be subscribed again
+            o3.next(1);
+            expect(observer.next).toBeCalledWith(2); // 1 (o3) + 1 (o2)
+            expect(counter).toEqual(4);
+            expect(isO2Subscribed).toBeTruthy(); // Subscribed again
         });
     });
 
