@@ -33,7 +33,7 @@ const context: Context = {
     $: void 0,
 };
 
-export function run<T>(fn: Cb<T>): Observable<T> {
+export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
     const update$ = new Subject<Update>();
     const $ = createTracker(true);
@@ -75,27 +75,23 @@ export function run<T>(fn: Cb<T>): Observable<T> {
         }
     };
 
-    return new Observable((observer) => {
-        const sub = update$
-            .pipe(
-                // run fn() and completion checker instantly
-                startWith(Update.Value, Update.Completion),
-                takeWhile(u => u !== Update.Completion || anyDepRunning()),
-                switchMap(u => u === Update.Value ? runFn() : EMPTY),
-                distinctUntilChanged(),
-            )
-            .subscribe(observer);
+    const sub = update$
+        .pipe(
+            // run fn() and completion checker instantly
+            startWith(Update.Value, Update.Completion),
+            takeWhile(u => u !== Update.Completion || anyDepRunning()),
+            switchMap(u => u === Update.Value ? runFn() : EMPTY),
+            distinctUntilChanged(),
+        )
+        .subscribe(observer);
 
-        // destroy all subscriptions
-        sub.add(() => {
-            deps.forEach((entry) => {
-                entry.subscription?.unsubscribe();
-            });
-            update$.complete();
-            deps.clear();
+    // destroy all subscriptions
+    sub.add(() => {
+        deps.forEach((entry) => {
+            entry.subscription?.unsubscribe();
         });
-
-        return sub;
+        update$.complete();
+        deps.clear();
     });
 
     function createTracker(track: boolean) {
@@ -177,7 +173,9 @@ export function run<T>(fn: Cb<T>): Observable<T> {
             }
         };
     }
-}
+
+    return sub;
+});
 
 const tryApply = <T>(f: $FnT<T> | undefined, o: Observable<T>) => {
     if (!f) {
