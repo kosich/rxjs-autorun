@@ -343,5 +343,94 @@ describe('autorun', () => {
         });
     });
 
+    describe('branching', () => {
+        it('untracks a dep when not tracked any longer due to branching', () => {
+            const o = new BehaviorSubject(1);
+            const o2 = new BehaviorSubject(2);
+            let counter = 0;
+            const r = run(() => {
+                ++counter;
+                _(o2); // Make o2 strong so it stays subscribed
+                // When o is odd, o2 is tracked
+                // When o is even, o2 is not tracked (but still observed/subscribed)
+                return ($(o) % 2) ? $(o2) : -1;
+            });
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(2);
+            expect(counter).toEqual(1);
+
+            o2.next(3); // o2 is tracked, so new value expected
+            expect(observer.next).toBeCalledWith(3);
+            expect(counter).toEqual(2);
+
+            o.next(2); // o2 now becomes untracked cause o is even
+            expect(observer.next).toBeCalledWith(-1);
+            expect(counter).toEqual(3);
+
+            o2.next(4); // o2 is not tracked, so no effect.
+            expect(observer.next).toBeCalledWith(-1);
+            expect(counter).toEqual(3);
+
+            o.next(1); // o2 now becomes tracked again
+            expect(observer.next).toBeCalledWith(4);
+            expect(counter).toEqual(4);
+
+            o2.next(10); // o2 is tracked again, so new value expected
+            expect(observer.next).toBeCalledWith(10);
+            expect(counter).toEqual(5);
+        });
+
+        it('untracks a dep when it becomes unreachable due to late subscription', () => {
+            let counter = 0;
+            // o is the discriminator. It determines whether o3 is observed
+            const o  = new BehaviorSubject(0);
+            // o2 is the indicator. It indicates whether it is tracked or not
+            const o2 = new BehaviorSubject(1);
+            // o3 is the late emitter. It doesn't emit immediately
+            const o3 = new Subject<number>();
+            const r = run(() => {
+                ++counter;
+                _(o2);
+                const n = $(o) % 2 ? $(o3) : -1;
+                return n + $(o2);
+            });
+            sub = r.subscribe(observer);
+
+            // o3 not subscribed yet. No problem.
+            expect(observer.next).toBeCalledWith(0); // -1 + 1
+            expect(counter).toEqual(1);
+
+            // o2 is tracked
+            o2.next(2);
+            expect(observer.next).toBeCalledWith(1); // -1 + 2
+            expect(counter).toEqual(2);
+
+            // Will start to observe late emitter o3 now.
+            // It doesn't have a value yet so the expression will be aborted.
+            // o2 will be untracked now because its value change doesn't change
+            // the outcome of the expression.
+            o.next(1);
+            expect(observer.next).toBeCalledWith(1); // No change
+            expect(counter).toEqual(3);
+
+            // o2 is not tracked so won't run the expression
+            o2.next(3);
+            expect(observer.next).toBeCalledWith(1); // No change
+            expect(counter).toEqual(3); // Same as before
+
+            // o3 now has a value, so o2 will be tracked and it's new value (3)
+            // will be used.
+            o3.next(1);
+            expect(observer.next).toBeCalledWith(4); // 1 (o3) + 3 (o2)
+            expect(counter).toEqual(4);
+
+            // o2 is tracked again
+            o2.next(4);
+            expect(observer.next).toBeCalledWith(5); // 1 (o3) + 4 (o2)
+            expect(counter).toEqual(5);
+        });
+    });
+
     // TODO: cover logic branching w/ late subscription
 });

@@ -57,6 +57,10 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
         if (hasError) {
             return throwError(error);
         }
+        // Mark all deps as untracked
+        for (let dep of deps.values()) {
+            dep.track = false;
+        }
         const prev$ = context.$;
         const prev_ = context._;
         context.$ = $;
@@ -136,7 +140,7 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
                         v.value = value;
 
                         if (isAsync) {
-                            if (track) {
+                            if (v.track) {
                                 update$.next(Update.Value);
                             } else {
                                 // NOTE: what to do if the silenced value is absent?
