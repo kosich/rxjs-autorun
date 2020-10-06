@@ -1,4 +1,4 @@
-import { BehaviorSubject, of, Subject, Subscription } from 'rxjs';
+import { BehaviorSubject, of, Subject, Subscription, throwError } from 'rxjs';
 import { $, run, _ } from '../src';
 
 describe('autorun', () => {
@@ -115,13 +115,126 @@ describe('autorun', () => {
         expect(observer.next.mock.calls).toEqual([['c']]);
     });
 
-    // TODO: cover logic branching w/ late subscription
+    describe('completion', () => {
+        it('will complete when deps complete', () => {
+            const o = new BehaviorSubject(1);
+            const o2 = new BehaviorSubject(2);
+            const r = run(() => $(o) + $(o2));
+            sub = r.subscribe(observer);
 
-    // TODO: implement this
-    // it('should complete with tracked observables', () => {
-    //     const o = of(1);
-    //     const r = run(() => $(o));
-    //     r.subscribe(observer);
-    //     expect(observer.complete.mock.calls.length).toBe(1);
-    // });
+            expect(observer.next).toBeCalledWith(3);
+            expect(observer.complete).not.toHaveBeenCalled();
+
+            // 1 of 2 completes. Result doesn't complete.
+            o2.complete();
+            o.next(3);
+            expect(observer.next).toBeCalledWith(5);
+            expect(observer.complete).not.toHaveBeenCalled();
+
+            // Both deps completed. Result completes as well.
+            o.complete();
+            expect(observer.complete).toHaveBeenCalled();
+        });
+
+        it('doesn\'t care about completion of untracked dep', () => {
+            const o = new BehaviorSubject(1);
+            const o2 = new BehaviorSubject(2);
+            const r = run(() => $(o) + _(o2));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(3);
+            expect(observer.complete).not.toHaveBeenCalled();
+
+            // The only tracked dep completes, so result completes
+            o.complete();
+            expect(observer.complete).toHaveBeenCalled();
+        });
+
+        it('completes immediately when only using untracked values', () => {
+            const o = new BehaviorSubject(1);
+            const o2 = new BehaviorSubject(2);
+            const r = run(() => _(o) + _(o2));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(3);
+            expect(observer.complete).toHaveBeenCalled();
+        });
+
+        it('doesn\'t rerun expression on completion of dep', () => {
+            const o = new BehaviorSubject(1);
+            let runCount = 0;
+            const r = run(() => $(o) + ++runCount);
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(2);
+            expect(runCount).toEqual(1);
+
+            o.complete();
+            expect(observer.next).toBeCalledWith(2);
+            expect(runCount).toEqual(1);
+        });
+
+        it('completes correctly when deps complete synchronously', () => {
+            const o = of(1);
+            const o2 = of(2);
+            const r = run(() => $(o) + $(o2));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(3);
+            expect(observer.complete).toHaveBeenCalled();
+        });
+    });
+
+    describe('error', () => {
+        it('errors out when one of the deps errors out', () => {
+            const o = new BehaviorSubject(1);
+            const o2 = new BehaviorSubject(2);
+            const r = run(() => $(o) + $(o2));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(3);
+            expect(observer.error).not.toHaveBeenCalled();
+
+            o2.error('Some failure');
+            expect(observer.error).toHaveBeenCalledWith('Some failure');
+        });
+
+        it('errors out even when error value is undefined', () => {
+            const o = new BehaviorSubject(1);
+            const r = run(() => $(o));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(1);
+            expect(observer.error).not.toHaveBeenCalled();
+
+            o.error(void 0);
+            expect(observer.error).toHaveBeenCalledWith(void 0);
+        });
+
+        it('also considers untracked observable errors', () => {
+            const o = new BehaviorSubject(1);
+            const o2 = new BehaviorSubject(2);
+            const r = run(() => $(o) + _(o2));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).toBeCalledWith(3);
+            expect(observer.error).not.toHaveBeenCalled();
+
+            // Untracked observer errors out
+            o2.error('Byebye');
+            expect(observer.error).toHaveBeenCalledWith('Byebye');
+        });
+
+        it('completes correctly when deps error out synchronously', () => {
+            const o = of(1);
+            const o2 = throwError('Byebye');
+            const r = run(() => $(o) + $(o2));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).not.toBeCalled();
+            expect(observer.error).toHaveBeenCalledWith('Byebye');
+        });
+    });
+
+    // TODO: cover logic branching w/ late subscription
 });

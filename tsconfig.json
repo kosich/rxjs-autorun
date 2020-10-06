@@ -4,6 +4,7 @@
         "outDir": "./dist/",
         "noImplicitAny": false,
         "noUnusedLocals": false,
+        "strictNullChecks": true,
         "moduleResolution": "node",
         "module": "commonjs",
         "target": "es2015",
