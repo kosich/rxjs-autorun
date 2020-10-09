@@ -54,7 +54,8 @@ describe('autorun', () => {
         const r = run(() => _(o));
         sub = r.subscribe(observer);
         o.next('test');
-        expect(observer.next.mock.calls.length).toEqual(0);
+        expect(observer.next).toBeCalledWith('test');
+        expect(observer.complete).toBeCalled();
     });
 
     test('Dependant runners', () => {
@@ -646,6 +647,93 @@ describe('autorun', () => {
             });
         });
     });
+
+    describe('untracked with late emission', () => {
+        it('always tracks a dep until it emits', () => {
+            const o = new Subject<number>();
+            const r = run(() => _(o));
+            sub = r.subscribe(observer);
+
+            // Waiting for a value of o...
+            expect(observer.next).not.toBeCalled();
+            expect(observer.complete).not.toBeCalled();
+
+            // o receiving a value. Untracked so complete immediately
+            o.next(3);
+            expect(observer.next).toBeCalledWith(3);
+            expect(observer.complete).toBeCalled();
+        });
+
+        it('will eventually start listening for tracked dep', () => {
+            const o = new Subject<number>();
+            const o2 = new BehaviorSubject(2);
+            const r = run(() => _(o) + $(o2));
+            sub = r.subscribe(observer);
+
+            // Waiting for a value of o... o2 not observed yet.
+            expect(observer.next).not.toBeCalled();
+
+            // o receiving a value. Will listen to tracked o2 now.
+            o.next(3);
+            expect(observer.next).toBeCalledWith(5); // 3 (o) + 2 (o2)
+
+            o2.next(1);
+            expect(observer.next).toBeCalledWith(4); // 3 (o) + 1 (o2)
+        });
+
+        it('will only change on first value of untracked dep', () => {
+            const o = new Subject<number>();
+            const o2 = new BehaviorSubject(2);
+            const r = run(() => $(o2) + _(o));
+            sub = r.subscribe(observer);
+
+            // Waiting for a value of o...
+            expect(observer.next).not.toBeCalled();
+
+            // o receiving first value.
+            o.next(3);
+            expect(observer.next).toBeCalledWith(5); // 3 (o) + 2 (o2)
+
+            // o receiving second value. But untracked so expression not called.
+            o.next(4);
+            expect(observer.next).toBeCalledWith(5); // Not changed
+
+            // o2 receives new value. Will use changed value of o now too.
+            o2.next(6);
+            expect(observer.next).toBeCalledWith(10); // 4 (o) + 6 (o2)
+        });
+
+        it('will complete anyway when untracked value completes before it emits', () => {
+            const o = new Subject<number>();
+            const r = run(() => _(o));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).not.toBeCalled();
+            expect(observer.complete).not.toBeCalled();
+
+            o.complete();
+            expect(observer.next).not.toBeCalled();
+            expect(observer.complete).toBeCalled();
+        });
+
+        it('will not complete when untracked value completes before it emits when tracking other value', () => {
+            const o = new Subject<number>();
+            const o2 = new BehaviorSubject(2);
+            const r = run(() => $(o2) + _(o));
+            sub = r.subscribe(observer);
+
+            expect(observer.next).not.toBeCalled();
+            expect(observer.complete).not.toBeCalled();
+
+            // o completes before it emits.
+            // expression will not complete yet because it might be that a new value of o2
+            // will branch around o.
+            o.complete();
+            expect(observer.next).not.toBeCalled();
+            expect(observer.complete).not.toBeCalled();
+        });
+    });
+
 
     // TODO: cover logic branching w/ late subscription
 });

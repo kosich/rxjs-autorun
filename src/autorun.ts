@@ -178,7 +178,7 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
                 hasValue: false,
                 value: void 0,
                 subscription: void 0,
-                track,
+                track: true,
                 used: true,
                 completed: false,
                 strength
@@ -197,19 +197,19 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
                 .pipe(distinctUntilChanged())
                 .subscribe({
                     next: (value) => {
+                        const hadValue = v.hasValue;
                         v.hasValue = true;
                         v.value = value;
 
-                        if (isAsync) {
-                            if (v.track) {
-                                update$.next(Update.Value);
-                            } else {
-                                // NOTE: what to do if the silenced value is absent?
-                                // should we:
-                                // - interrupt computation & w scheduling re-run when first value available
-                                // - interrupt computation & w/o scheduling re-run
-                                // - continue computation w/ undefined as value of _(o)
-                            }
+                        if (isAsync && v.track) {
+                            update$.next(Update.Value);
+                        }
+                        if (!hadValue && !track) {
+                            // Untracked dep now has it's first value. So really untrack it.
+                            v.track = false;
+                            // It could be that all tracked deps already completed. So signal
+                            // that completion state might have changed.
+                            update$.next(Update.Completion);
                         }
                     },
                     error: e => {
@@ -221,7 +221,7 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
                     },
                     complete: () => {
                         v.completed = true;
-                        if (isAsync && track) {
+                        if (isAsync && v.track) {
                             update$.next(Update.Completion);
                         }
                     }
