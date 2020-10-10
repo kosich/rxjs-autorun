@@ -119,6 +119,28 @@ describe('autorun', () => {
         expect(observer.next.mock.calls).toEqual([['c']]);
     });
 
+    it('will not accept running $ and _ outside run', () => {
+        // Before run
+        const e = new Error('$ or _ can only be called within a run() context');
+        expect($).toThrow(e);
+        expect(_).toThrow(e);
+        expect($.weak).toThrow(e);
+        expect(_.normal).toThrow(e);
+        expect($.weak).toThrow(e);
+        expect(_.normal).toThrow(e);
+
+        const r = run(() => $(of(1)));
+        sub = r.subscribe(observer);
+
+        // After run
+        expect($).toThrow(e);
+        expect(_).toThrow(e);
+        expect($.weak).toThrow(e);
+        expect(_.normal).toThrow(e);
+        expect($.weak).toThrow(e);
+        expect(_.normal).toThrow(e);
+    });
+
     describe('completion', () => {
         it('will complete when deps complete', () => {
             const o = new BehaviorSubject(1);

@@ -37,15 +37,15 @@ export function autorun<T>(fn: Cb<T>) {
     return run<T>(fn).subscribe();
 }
 
-const throwCtxtError = () => { throw new Error('$ or _ can only be called within a run() context'); }
-const errorTracker: $FnWithTrackers = Object.assign({},
-    throwCtxtError, { weak: throwCtxtError, normal: throwCtxtError });
+const errorTracker = (() => { throw new Error('$ or _ can only be called within a run() context'); }) as any as $FnWithTrackers;
+errorTracker.weak = errorTracker;
+errorTracker.normal = errorTracker;
 
 type Context = {
     _: $FnWithTrackers,
     $: $FnWithTrackers
 }
-const context: Context = {
+let context: Context = {
     _: errorTracker,
     $: errorTracker
 };
@@ -111,11 +111,8 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
                 maybeRestoreStrength.push(key);
             }
         }
-        const prev$ = context.$;
-        const prev_ = context._;
-        context.$ = $;
-        context._ = _;
-
+        const prevCtxt = context;
+        context = {$, _};
         try {
             const rsp = fn();
             removeUnusedDeps(Strength.Normal);
@@ -131,8 +128,7 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
             }
             return hasError ? throwError(error) : EMPTY;
         } finally {
-            context.$ = prev$;
-            context._ = prev_;
+            context = prevCtxt;
         }
     };
 
