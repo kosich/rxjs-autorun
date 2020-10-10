@@ -1,6 +1,12 @@
 import { EMPTY, Observable, of, Subject, Subscription, throwError } from 'rxjs';
 import { distinctUntilChanged, startWith, switchMap, takeWhile } from 'rxjs/operators';
 
+
+enum Strength {
+    Weak = 0,
+    Normal = 1
+}
+
 interface TrackEntry<V> {
     hasValue: boolean;
     value?: V;
@@ -8,13 +14,19 @@ interface TrackEntry<V> {
     track: boolean;
     used: boolean;
     completed: boolean;
+    strength: Strength;
 }
 
 const ERROR_STUB = Object.create(null);
 
-type $FnT<T> = (o: Observable<T>) => T;
 type $Fn = <T>(o: Observable<T>) => T;
 type Cb<T> = (...args: any[]) => T;
+
+type Trackers = {
+    weak: $Fn;
+    normal: $Fn;
+}
+type $FnWithTrackers = $Fn & Trackers;
 
 enum Update {
     Value,
@@ -25,20 +37,40 @@ export function autorun<T>(fn: Cb<T>) {
     return run<T>(fn).subscribe();
 }
 
+const throwCtxtError = () => { throw new Error('$ or _ can only be called within a run() context'); }
+const errorTracker: $FnWithTrackers = Object.assign({},
+    throwCtxtError, { weak: throwCtxtError, normal: throwCtxtError });
+
 type Context = {
-    _?: $Fn,
-    $?: $Fn
+    _: $FnWithTrackers,
+    $: $FnWithTrackers
 }
 const context: Context = {
-    _: void 0,
-    $: void 0,
+    _: errorTracker,
+    $: errorTracker
 };
+
+const forwardTracker = (tracker: keyof Context): $FnWithTrackers => {
+    const r  = (<T>(o: Observable<T>): T => context[tracker](o)) as $FnWithTrackers;
+    r.weak   = o => context[tracker].weak(o);
+    r.normal = o => context[tracker].normal(o);
+    return r;
+}
+
+export const $ = forwardTracker('$');
+export const _ = forwardTracker('_');
 
 export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
     const update$ = new Subject<Update>();
-    const $ = createTracker(true);
-    const _ = createTracker(false);
+    const createTrackers = (track: boolean) => {
+        const r  = createTracker(track, Strength.Normal) as $FnWithTrackers;
+        r.weak   = createTracker(track, Strength.Weak);
+        r.normal = createTracker(track, Strength.Normal);
+        return r;
+    };
+    const $ = createTrackers(true);
+    const _ = createTrackers(false);
 
     let error: any;
     let hasError = false;
@@ -54,22 +86,45 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
         return false;
     }
 
+    const removeUnusedDeps = (ofStrength: Strength) => {
+        for (let [key, { used, subscription, strength }] of deps.entries()) {
+            if (used || strength > ofStrength) {
+                continue;
+            }
+            subscription?.unsubscribe();
+            deps.delete(key);
+        }
+    }
+
     const runFn = () => {
         if (hasError) {
             return throwError(error);
         }
         // Mark all deps as untracked and unused
-        for (let dep of deps.values()) {
+        const maybeRestoreStrength: Observable<any>[] = [];
+        for (let [key, dep] of deps.entries()) {
             dep.track = false;
             dep.used = false;
+            if (dep.strength === Strength.Normal) {
+                // Reset normal strength to weak when last run was successfull.
+                dep.strength = Strength.Weak;
+                maybeRestoreStrength.push(key);
+            }
         }
         const prev$ = context.$;
         const prev_ = context._;
         context.$ = $;
         context._ = _;
+
         try {
-            return of(fn());
+            const rsp = fn();
+            removeUnusedDeps(Strength.Normal);
+            return of(rsp);
         } catch (e) {
+            for (let dep of maybeRestoreStrength) {
+                deps.get(dep)!.strength = Strength.Normal;
+            }
+            removeUnusedDeps(Strength.Weak);
             // rethrow original errors
             if (e != ERROR_STUB) {
                 throw e;
@@ -78,14 +133,6 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
         } finally {
             context.$ = prev$;
             context._ = prev_;
-            // Remove all unused deps
-            for (let [key, { used, subscription }] of deps.entries()) {
-                if (used) {
-                    continue;
-                }
-                subscription?.unsubscribe();
-                deps.delete(key);
-            }
         }
     };
 
@@ -108,7 +155,7 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
         deps.clear();
     });
 
-    function createTracker(track: boolean) {
+    function createTracker(track: boolean, strength: Strength) {
         return function $<O>(o: Observable<O>): O {
             if (deps.has(o)) {
                 const v = deps.get(o)!;
@@ -118,6 +165,11 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
                     // So completed state becomes relevant now.
                     // Happens in case of e.g. run(() => _(o) + $(o))
                     v.track = true;
+                }
+                if (strength > v.strength) {
+                    // Previous tracking strength was weaker than it currently
+                    // is. So temporarily use the stronger version.
+                    v.strength = strength;
                 }
                 if (v.hasValue) {
                     return v.value as O;
@@ -133,6 +185,7 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
                 track,
                 used: true,
                 completed: false,
+                strength
             };
 
             // NOTE: we will synchronously (immediately) evaluate observables
@@ -192,13 +245,3 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
 
     return sub;
 });
-
-const tryApply = <T>(f: $FnT<T> | undefined, o: Observable<T>) => {
-    if (!f) {
-        throw new Error('$ or _ can only be called within a run() context');
-    }
-    return f(o);
-}
-
-export const $: $Fn = <T>(o: Observable<T>) => tryApply<T>(context.$, o);
-export const _: $Fn = <T>(o: Observable<T>) => tryApply<T>(context._, o);
