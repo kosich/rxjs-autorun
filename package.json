@@ -1,7 +1,7 @@
 {
   "name": "rxjs-autorun",
-  "version": "0.0.4",
-  "description": "Proxy for RxJS Observables",
+  "version": "0.0.0",
+  "description": "Autorun expressions with RxJS Observables",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
   "es2015": "./dist/es2015/index.js",
@@ -28,10 +28,8 @@
     "url": "git+https://github.com/kosich/rxjs-autorun.git"
   },
   "keywords": [
-    "text-to-speech",
-    "speech synthesis",
-    "t2s",
-    "Web Speech API",
+    "autorun",
+    "computed",
     "rxjs",
     "javascript",
     "typescript"
