@@ -36,7 +36,7 @@ enum Update {
 };
 
 export function autorun<T>(fn: Cb<T>) {
-    return run<T>(fn).subscribe();
+    return computed<T>(fn).subscribe();
 }
 
 const errorTracker = (() => { throw new Error('$ or _ can only be called within a run() context'); }) as any as $FnWithTrackers;
@@ -64,7 +64,7 @@ const forwardTracker = (tracker: keyof Context): $FnWithTrackers => {
 export const $ = forwardTracker('$');
 export const _ = forwardTracker('_');
 
-export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
+export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
     const update$ = new Subject<Update>();
     const createTrackers = (track: boolean) => {
