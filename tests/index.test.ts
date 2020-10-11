@@ -1,5 +1,5 @@
 import { BehaviorSubject, defer, Observable, of, Subject, Subscription, throwError } from 'rxjs';
-import { $, run, _ } from '../src';
+import { $, computed, _ } from '../src';
 
 describe('autorun', () => {
 
@@ -29,14 +29,14 @@ describe('autorun', () => {
 
     test('Simple instant/cold track', () => {
         const o = of(1);
-        const r = run(() => $(o));
+        const r = computed(() => $(o));
         sub = r.subscribe(observer);
         expect(observer.next.mock.calls).toEqual([[1]]);
     });
 
     test('Simple hot track', () => {
         const o = new Subject();
-        const r = run(() => $(o));
+        const r = computed(() => $(o));
         sub = r.subscribe(observer);
         o.next('test');
         expect(observer.next.mock.calls).toEqual([['test']]);
@@ -44,14 +44,14 @@ describe('autorun', () => {
 
     test('Simple instant/cold untrack', () => {
         const o = of(1);
-        const r = run(() => _(o));
+        const r = computed(() => _(o));
         sub = r.subscribe(observer);
         expect(observer.next.mock.calls.length).toEqual(1);
     });
 
     test('Simple untrack', () => {
         const o = new Subject();
-        const r = run(() => _(o));
+        const r = computed(() => _(o));
         sub = r.subscribe(observer);
         o.next('test');
         expect(observer.next).toBeCalledWith('test');
@@ -60,8 +60,8 @@ describe('autorun', () => {
 
     test('Dependant runners', () => {
         const o = of(1);
-        const r1 = run(() => $(o));
-        const r2 = run(() => $(r1));
+        const r1 = computed(() => $(o));
+        const r2 = computed(() => $(r1));
         sub = r2.subscribe(observer);
         expect(observer.next.mock.calls).toEqual([[1]]);
     });
@@ -69,7 +69,7 @@ describe('autorun', () => {
     test('Silent with trackable', () => {
         const a = new BehaviorSubject('#');
         const b = new BehaviorSubject(1);
-        const c = run(() => _(a) + $(b));
+        const c = computed(() => _(a) + $(b));
         sub = c.subscribe(observer); // instant update
         expect(observer.next.mock.calls.length).toBe(1);
         expect(observer.next.mock.calls[0]).toEqual(['#1']);
@@ -83,7 +83,7 @@ describe('autorun', () => {
     it('should only react to distinctive value changes', () => {
         const o = new Subject<number>();
         const fn = jest.fn(() => 0);
-        const r = run(() => $(o) + fn());
+        const r = computed(() => $(o) + fn());
         sub = r.subscribe(observer);
         o.next(0);
         o.next(0);
@@ -92,7 +92,7 @@ describe('autorun', () => {
 
     it('should only emit distinctive results', () => {
         const o = new Subject<number>();
-        const r = run(() => $(o) - $(o));
+        const r = computed(() => $(o) - $(o));
         sub = r.subscribe(observer);
         o.next(0);
         o.next(1);
@@ -103,7 +103,7 @@ describe('autorun', () => {
     it('should interrupt expression midflight', () => {
         const o = new Subject<number>();
         const fn = jest.fn(() => 0);
-        const r = run(() => fn() + $(o));
+        const r = computed(() => fn() + $(o));
         sub = r.subscribe(observer);
         expect(fn.mock.calls.length).toBe(1);
         expect(observer.next.mock.calls.length).toBe(0);
@@ -115,14 +115,14 @@ describe('autorun', () => {
     // this might not be desired behavior
     it('will skip sync emissions', () => {
         const o = of('a', 'b', 'c');
-        const r = run(() => $(o));
+        const r = computed(() => $(o));
         sub = r.subscribe(observer);
         expect(observer.next.mock.calls).toEqual([['c']]);
     });
 
-    it('will not accept running $ and _ outside run', () => {
-        // Before run
-        const e = new Error('$ or _ can only be called within a run() context');
+    it('will not accept running $ and _ outside computed', () => {
+        // Before computed
+        const e = new Error('$ or _ can only be called within computed or autorun context');
         expect($).toThrow(e);
         expect(_).toThrow(e);
         expect($.weak).toThrow(e);
@@ -130,10 +130,10 @@ describe('autorun', () => {
         expect($.weak).toThrow(e);
         expect(_.normal).toThrow(e);
 
-        const r = run(() => $(of(1)));
+        const r = computed(() => $(of(1)));
         sub = r.subscribe(observer);
 
-        // After run
+        // After computed
         expect($).toThrow(e);
         expect(_).toThrow(e);
         expect($.weak).toThrow(e);
@@ -146,7 +146,7 @@ describe('autorun', () => {
         it('will complete when deps complete', () => {
             const o = new BehaviorSubject(1);
             const o2 = new BehaviorSubject(2);
-            const r = run(() => $(o) + $(o2));
+            const r = computed(() => $(o) + $(o2));
             sub = r.subscribe(observer);
 
             expect(observer.next).toBeCalledWith(3);
@@ -166,7 +166,7 @@ describe('autorun', () => {
         it('doesn\'t care about completion of untracked dep', () => {
             const o = new BehaviorSubject(1);
             const o2 = new BehaviorSubject(2);
-            const r = run(() => $(o) + _(o2));
+            const r = computed(() => $(o) + _(o2));
             sub = r.subscribe(observer);
 
             expect(observer.next).toBeCalledWith(3);
@@ -180,7 +180,7 @@ describe('autorun', () => {
         it('completes immediately when only using untracked values', () => {
             const o = new BehaviorSubject(1);
             const o2 = new BehaviorSubject(2);
-            const r = run(() => _(o) + _(o2));
+            const r = computed(() => _(o) + _(o2));
             sub = r.subscribe(observer);
 
             expect(observer.next).toBeCalledWith(3);
@@ -190,7 +190,7 @@ describe('autorun', () => {
         it('doesn\'t rerun expression on completion of dep', () => {
             const o = new BehaviorSubject(1);
             let runCount = 0;
-            const r = run(() => $(o) + ++runCount);
+            const r = computed(() => $(o) + ++runCount);
             sub = r.subscribe(observer);
 
             expect(observer.next).toBeCalledWith(2);
@@ -204,7 +204,7 @@ describe('autorun', () => {
         it('completes correctly when deps complete synchronously', () => {
             const o = of(1);
             const o2 = of(2);
-            const r = run(() => $(o) + $(o2));
+            const r = computed(() => $(o) + $(o2));
             sub = r.subscribe(observer);
 
             expect(observer.next).toBeCalledWith(3);
@@ -216,7 +216,7 @@ describe('autorun', () => {
         it('errors out when one of the deps errors out', () => {
             const o = new BehaviorSubject(1);
             const o2 = new BehaviorSubject(2);
-            const r = run(() => $(o) + $(o2));
+            const r = computed(() => $(o) + $(o2));
             sub = r.subscribe(observer);
 
             expect(observer.next).toBeCalledWith(3);
@@ -228,7 +228,7 @@ describe('autorun', () => {
 
         it('errors out even when error value is undefined', () => {
             const o = new BehaviorSubject(1);
-            const r = run(() => $(o));
+            const r = computed(() => $(o));
             sub = r.subscribe(observer);
 
             expect(observer.next).toBeCalledWith(1);
@@ -241,7 +241,7 @@ describe('autorun', () => {
         it('also considers untracked observable errors', () => {
             const o = new BehaviorSubject(1);
             const o2 = new BehaviorSubject(2);
-            const r = run(() => $(o) + _(o2));
+            const r = computed(() => $(o) + _(o2));
             sub = r.subscribe(observer);
 
             expect(observer.next).toBeCalledWith(3);
@@ -255,7 +255,7 @@ describe('autorun', () => {
         it('completes correctly when deps error out synchronously', () => {
             const o = of(1);
             const o2 = throwError('Byebye');
-            const r = run(() => $(o) + $(o2));
+            const r = computed(() => $(o) + $(o2));
             sub = r.subscribe(observer);
 
             expect(observer.next).not.toBeCalled();
@@ -267,7 +267,7 @@ describe('autorun', () => {
         it('should subscribe twice', () => {
             let count = 0;
             const o = defer(() => of(++count));
-            const r = run(() => $(o));
+            const r = computed(() => $(o));
 
             r.subscribe();
             r.subscribe();
@@ -278,7 +278,7 @@ describe('autorun', () => {
             const o = new BehaviorSubject(1);
             const o2 = new BehaviorSubject(2);
             const observer2 = makeObserver();
-            const r = run(() => $(o) + _(o2));
+            const r = computed(() => $(o) + _(o2));
 
             sub = new Subscription();
             sub.add(r.subscribe(observer));
@@ -311,7 +311,7 @@ describe('autorun', () => {
             let counter = 0;
             const o = defer(() => new BehaviorSubject(++counter));
             const observer2 = makeObserver();
-            const r = run(() => $(o));
+            const r = computed(() => $(o));
 
             sub = new Subscription();
             sub.add(r.subscribe(observer));
@@ -326,7 +326,7 @@ describe('autorun', () => {
             const os = [new BehaviorSubject(1), new BehaviorSubject(2)];
             const o = defer(() => os[counter++]);
             const observer2 = makeObserver();
-            const r = run(() => $(o));
+            const r = computed(() => $(o));
 
             sub = new Subscription();
             sub.add(r.subscribe(observer));
@@ -348,7 +348,7 @@ describe('autorun', () => {
             const os = [new BehaviorSubject(1), new BehaviorSubject(2)];
             const o = defer(() => os[counter++]);
             const observer2 = makeObserver();
-            const r = run(() => $(o));
+            const r = computed(() => $(o));
 
             sub = new Subscription();
             sub.add(r.subscribe(observer));
@@ -372,7 +372,7 @@ describe('autorun', () => {
                 const o = new BehaviorSubject(1);
                 const o2 = new BehaviorSubject(2);
                 let counter = 0;
-                const r = run(() => {
+                const r = computed(() => {
                     ++counter;
                     _(o2); // Make o2 strong so it stays subscribed
                     // When o is odd, o2 is tracked
@@ -413,7 +413,7 @@ describe('autorun', () => {
                 const o2 = new BehaviorSubject(1);
                 // o3 is the late emitter. It doesn't emit immediately
                 const o3 = new Subject<number>();
-                const r = run(() => {
+                const r = computed(() => {
                     ++counter;
                     _(o2);
                     const n = $(o) % 2 ? $(o3) : -1;
@@ -479,7 +479,7 @@ describe('autorun', () => {
             });
 
             it('unsubscribes a dep when it is not relevant any longer due to branching', () => {
-                const r = run(() => {
+                const r = computed(() => {
                     ++counter;
                     // When o is odd, o2 is tracked
                     // When o is even, o2 is not tracked and should be unsubscribed
@@ -509,7 +509,7 @@ describe('autorun', () => {
                 // o2 is the detector. It detects whether it is observed or not
                 // o3 is the late emitter. It doesn't emit immediately
                 o.next(0);
-                const r = run(() => {
+                const r = computed(() => {
                     ++counter;
                     const n = $(o) % 2 ? $(o3) : -1;
                     return n + $(o2);
@@ -556,7 +556,7 @@ describe('autorun', () => {
                 // o2 is the detector. It detects whether it is observed or not
                 // o3 is the late emitter. It doesn't emit immediately
                 o.next(0);
-                const r = run(() => {
+                const r = computed(() => {
                     ++counter;
                     const n = $(o) % 2 ? $(o3) : -1;
                     return n + $.weak(o2); // weak tracking
@@ -592,7 +592,7 @@ describe('autorun', () => {
             });
 
             it('will ajust strength when dep used multiple times in different context', () => {
-                const r = run(() => {
+                const r = computed(() => {
                     ++counter;
                     const n = $(o) % 2 ? $(o3) : $(o2); // always strongly bound in false case
                     return n
@@ -619,7 +619,7 @@ describe('autorun', () => {
 
             it('will bring back strength when normal dep not used anymore', () => {
                 o.next(0);
-                const r = run(() => {
+                const r = computed(() => {
                     ++counter;
                     switch($(o))
                     {
@@ -648,7 +648,7 @@ describe('autorun', () => {
 
             it('will stay observed when strongly observed', () => {
                 o.next(0);
-                const r = run(() => {
+                const r = computed(() => {
                     ++counter;
                     switch($(o))
                     {
@@ -698,7 +698,7 @@ describe('autorun', () => {
     describe('untracked with late emission', () => {
         it('always tracks a dep until it emits', () => {
             const o = new Subject<number>();
-            const r = run(() => _(o));
+            const r = computed(() => _(o));
             sub = r.subscribe(observer);
 
             // Waiting for a value of o...
@@ -714,7 +714,7 @@ describe('autorun', () => {
         it('will eventually start listening for tracked dep', () => {
             const o = new Subject<number>();
             const o2 = new BehaviorSubject(2);
-            const r = run(() => _(o) + $(o2));
+            const r = computed(() => _(o) + $(o2));
             sub = r.subscribe(observer);
 
             // Waiting for a value of o... o2 not observed yet.
@@ -731,7 +731,7 @@ describe('autorun', () => {
         it('will only change on first value of untracked dep', () => {
             const o = new Subject<number>();
             const o2 = new BehaviorSubject(2);
-            const r = run(() => $(o2) + _(o));
+            const r = computed(() => $(o2) + _(o));
             sub = r.subscribe(observer);
 
             // Waiting for a value of o...
@@ -752,7 +752,7 @@ describe('autorun', () => {
 
         it('will complete anyway when untracked value completes before it emits', () => {
             const o = new Subject<number>();
-            const r = run(() => _(o));
+            const r = computed(() => _(o));
             sub = r.subscribe(observer);
 
             expect(observer.next).not.toBeCalled();
@@ -766,7 +766,7 @@ describe('autorun', () => {
         it('will not complete when untracked value completes before it emits when tracking other value', () => {
             const o = new Subject<number>();
             const o2 = new BehaviorSubject(2);
-            const r = run(() => $(o2) + _(o));
+            const r = computed(() => $(o2) + _(o));
             sub = r.subscribe(observer);
 
             expect(observer.next).not.toBeCalled();
