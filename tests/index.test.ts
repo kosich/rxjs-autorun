@@ -632,7 +632,7 @@ describe('autorun', () => {
 
                 expect(isO2Subscribed).toBeTruthy();
 
-                // Remains subscribed due to strongness 'normal'
+                // Remains subscribed due to strength 'normal'
                 o.next(2);
                 expect(isO2Subscribed).toBeTruthy();
 
@@ -643,6 +643,53 @@ describe('autorun', () => {
 
                 // Hence should now be unsubscribed.
                 o.next(2);
+                expect(isO2Subscribed).toBeFalsy();
+            });
+
+            it('will stay observed when strongly observed', () => {
+                o.next(0);
+                const r = run(() => {
+                    ++counter;
+                    switch($(o))
+                    {
+                    case 0: return $.weak(o2) + $.strong(o2);
+                    case 1: return $.weak(o2);
+                    case 2: return $(o3) + $(o2);
+                    case 3: return 100;
+                    case 4: return $.normal(o2);
+                    }
+                });
+                sub = r.subscribe(observer);
+
+                expect(isO2Subscribed).toBeTruthy();
+
+                // Remains subscribed due to strength 'strong'
+                o.next(2);
+                expect(isO2Subscribed).toBeTruthy();
+
+                // It should *not* reduce its strength to 'weak', even when
+                // the 'strong' bound o2 is not used in a succeeded run.
+                o.next(1);
+                expect(isO2Subscribed).toBeTruthy();
+
+                // Hence it should remain subscribed on midflight interrupt ...
+                o.next(2);
+                expect(isO2Subscribed).toBeTruthy();
+
+                // ... and on a succeeded run where it is not used.
+                o.next(3);
+                expect(isO2Subscribed).toBeTruthy();
+
+                // Also when it acquires normal strength...
+                o.next(4);
+                expect(isO2Subscribed).toBeTruthy();
+
+                // ... it remains strongly subscribed.
+                o.next(3);
+                expect(isO2Subscribed).toBeTruthy();
+
+                // Except of cource when we are done with it.
+                sub.unsubscribe();
                 expect(isO2Subscribed).toBeFalsy();
             });
         });
