@@ -4,7 +4,7 @@
     🧙‍♂️ RxJS️ Autorun 🧙‍♀️
     <br/>
     <br/>
-    <img src="https://dev-to-uploads.s3.amazonaws.com/i/ts0dd1366mz4naczd55p.png" width="341px" />
+    <img src="https://dev-to-uploads.s3.amazonaws.com/i/509pq2z20ea3hn4d3ug5.png" width="358px" />
     <br/>
     <br/>
   </h1>
@@ -15,6 +15,14 @@ Autorun re-evaluates given expression, whenever dependant observables emit
 Tastes best with Observables that always contain a value, such as `BehaviorSubject`s, `of`, `startWith`, etc.
 
 **⚠️ WARNING:** use at your own risk!
+
+## 📦 Install
+
+```
+npm i rxjs-autorun
+```
+
+Or **[try it online](https://stackblitz.com/edit/rxjs-autorun-repl?file=index.ts)**
 
 ## 🔧 API
 
