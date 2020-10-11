@@ -122,7 +122,7 @@ describe('autorun', () => {
 
     it('will not accept running $ and _ outside computed', () => {
         // Before computed
-        const e = new Error('$ or _ can only be called within a run() context');
+        const e = new Error('$ or _ can only be called within computed or autorun context');
         expect($).toThrow(e);
         expect(_).toThrow(e);
         expect($.weak).toThrow(e);
