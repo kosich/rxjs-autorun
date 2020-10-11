@@ -120,8 +120,8 @@ describe('autorun', () => {
         expect(observer.next.mock.calls).toEqual([['c']]);
     });
 
-    it('will not accept running $ and _ outside run', () => {
-        // Before run
+    it('will not accept running $ and _ outside computed', () => {
+        // Before computed
         const e = new Error('$ or _ can only be called within a run() context');
         expect($).toThrow(e);
         expect(_).toThrow(e);
@@ -133,7 +133,7 @@ describe('autorun', () => {
         const r = computed(() => $(of(1)));
         sub = r.subscribe(observer);
 
-        // After run
+        // After computed
         expect($).toThrow(e);
         expect(_).toThrow(e);
         expect($.weak).toThrow(e);

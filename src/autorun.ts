@@ -39,7 +39,7 @@ export function autorun<T>(fn: Cb<T>) {
     return computed<T>(fn).subscribe();
 }
 
-const errorTracker = (() => { throw new Error('$ or _ can only be called within a run() context'); }) as any as $FnWithTrackers;
+const errorTracker = (() => { throw new Error('$ or _ can only be called within computed or autorun context'); }) as any as $FnWithTrackers;
 errorTracker.weak = errorTracker;
 errorTracker.normal = errorTracker;
 errorTracker.strong = errorTracker;
@@ -164,7 +164,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
                 if (track && !v.track) {
                     // Previously tracked with _, but now also with $.
                     // So completed state becomes relevant now.
-                    // Happens in case of e.g. run(() => _(o) + $(o))
+                    // Happens in case of e.g. computed(() => _(o) + $(o))
                     v.track = true;
                 }
                 if (strength > v.strength) {

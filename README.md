@@ -18,13 +18,13 @@ Tastes best with Observables that always contain a value, such as `BehaviorSubje
 
 ## 🔧 API
 
-- `run` returns an Observable that will emit evaluation resulst with each update
+- `computed` returns an Observable that will emit evaluation resulst with each update
 
-- `autorun` internally subscribes to `run` and returns the subscription
+- `autorun` internally subscribes to `computed` and returns the subscription
 
-- `$(O)` tells `run` that it should be re-evaluated when `O` emits, with it's latest value
+- `$(O)` tells `computed` that it should be re-evaluated when `O` emits, with it's latest value
 
-- `_(O)` still provides latest value to `run`, but doesn't enforce re-evaluation with `O` emission
+- `_(O)` still provides latest value to `computed`, but doesn't enforce re-evaluation with `O` emission
 
 See examples for more details
 
@@ -34,7 +34,7 @@ Instant evaluation:
 
 ```ts
 const o = of(1);
-const r = run(() => $(o));
+const r = computed(() => $(o));
 r.subscribe(console.log); // > 1
 ```
 
@@ -42,7 +42,7 @@ Delayed evaluation, when `o` emits:
 
 ```ts
 const o = new Subject();
-const r = run(() => $(o));
+const r = computed(() => $(o));
 r.subscribe(console.log);
 o.next('🐈'); // > 🐈
 ```
@@ -52,7 +52,7 @@ Expression with two observables:
 ```ts
 const a = new BehaviorSubject('#');
 const b = new BehaviorSubject(1);
-const c = run(() => _(a) + $(b));
+const c = computed(() => _(a) + $(b));
 
 c.subscribe(observer); // > #1
 a.next('💡'); // ~no update~
@@ -64,11 +64,11 @@ b.next(42); // > 💡42
 ### Sideeffects
 
 If an observable doesn't emit a synchronous value when it is subscribed, the expression will be **interrupted midflight** until observable emits.
-Therefore side-effects are dangerous inside `run`. E.g:
+Therefore side-effects are dangerous inside `computed`. E.g:
 
 ```ts
 const o = new Subject();
-run(() => {
+computed(() => {
   console.log('Hello'); // perform a side-effect
   return $(o);          // will fail here since o has not emitted yet
 }).subscribe(console.log);
@@ -91,7 +91,7 @@ Logic branching might lead to late subscription & unpredictable results:
 const a = timer(0, 1000).pipe( take(2) );
 const b = timer(0, 1000).pipe( take(2) );
 
-run(() => {
+computed(() => {
   if ($(a) % 2) return $(b);
   return $(a);
 })
@@ -108,12 +108,12 @@ run(() => {
 
 ### Synchronous values skipping
 
-Currently `run` might skip sync emissions and run only with latest value emmitted, e.g.:
+Currently `computed` might skip sync emissions and run only with latest value emmitted, e.g.:
 
 ```ts
 const o = of('a', 'b', 'c');
 
-run(() => $(o)).subscribe(console.log);
+computed(() => $(o)).subscribe(console.log);
 
 /** OUTPUT:
  * > c
