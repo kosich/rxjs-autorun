@@ -4,7 +4,8 @@ import { distinctUntilChanged, startWith, switchMap, takeWhile } from 'rxjs/oper
 
 enum Strength {
     Weak = 0,
-    Normal = 1
+    Normal = 1,
+    Strong = 2
 }
 
 interface TrackEntry<V> {
@@ -25,6 +26,7 @@ type Cb<T> = (...args: any[]) => T;
 type Trackers = {
     weak: $Fn;
     normal: $Fn;
+    strong: $Fn;
 }
 type $FnWithTrackers = $Fn & Trackers;
 
@@ -40,6 +42,7 @@ export function autorun<T>(fn: Cb<T>) {
 const errorTracker = (() => { throw new Error('$ or _ can only be called within a run() context'); }) as any as $FnWithTrackers;
 errorTracker.weak = errorTracker;
 errorTracker.normal = errorTracker;
+errorTracker.strong = errorTracker;
 
 type Context = {
     _: $FnWithTrackers,
@@ -54,6 +57,7 @@ const forwardTracker = (tracker: keyof Context): $FnWithTrackers => {
     const r  = (<T>(o: Observable<T>): T => context[tracker](o)) as $FnWithTrackers;
     r.weak   = o => context[tracker].weak(o);
     r.normal = o => context[tracker].normal(o);
+    r.strong = o => context[tracker].strong(o);
     return r;
 }
 
@@ -67,6 +71,7 @@ export const run = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
         const r  = createTracker(track, Strength.Normal) as $FnWithTrackers;
         r.weak   = createTracker(track, Strength.Weak);
         r.normal = createTracker(track, Strength.Normal);
+        r.strong = createTracker(track, Strength.Strong);
         return r;
     };
     const $ = createTrackers(true);
