@@ -10,9 +10,7 @@
   </h1>
 </div>
 
-Autorun re-evaluates given expression, whenever dependant observables emit
-
-Tastes best with Observables that always contain a value, such as `BehaviorSubject`s, `of`, `startWith`, etc.
+Re-runs given expression whenever dependant Observables emit
 
 **⚠️ WARNING:** use at your own risk!
 
@@ -30,15 +28,76 @@ Or **[try it online](https://stackblitz.com/edit/rxjs-autorun-repl?file=index.ts
 
 - `autorun` internally subscribes to `computed` and returns the subscription
 
+### 👓 Tracking
+
+You can read values from Observables inside `computed` (or `autorun`) in two ways:
+
 - `$(O)` tells `computed` that it should be re-evaluated when `O` emits, with it's latest value
 
 - `_(O)` still provides latest value to `computed`, but doesn't enforce re-evaluation with `O` emission
 
-See examples for more details
+Both functions would interrupt midflight if `O` has not emitted before and doesn't produce a value synchronously.
+
+If you don't want interruptions — try Observables that always contain a value, such as `BehaviorSubject`s, `of`, `startWith`, etc.
+
+Usually this is all one needs when to use `rxjs-autorun`
+
+### 💪 Strength
+
+Some times you need to tweak what to do with **subscription of an Observable that is not currently used**.
+
+So we provide three levels of subscription strength:
+
+- `normal` - default - will unsubscribe if the latest run of expression didn't use this Observable:
+
+  ```ts
+  compute(() => $(a) ? $(b) : 0)
+  ```
+
+  when `a` is falsy — `b` is not used and will be **dropped when expression finishes**
+
+  _NOTE: when you use `$(…)` — it applies normal strength, but you can be explicit about that via `$.normal(…)` notation_
+
+
+- `strong` - will keep the subscription for the life of the expression:
+
+  ```ts
+  compute(() => $(a) ? $.strong(b) : 0)
+  ```
+
+  when `a` is falsy — `b` is not used, but the subscription will be **kept**
+
+
+- `weak` - will unsubscribe eagerly, if waiting for other Observable to emit:
+
+  ```ts
+  compute(() => $(a) ? $.weak(b) : $.weak(c));
+  ```
+
+  When `a` is truthy — `c` is not used and we'll wait `b` to emit,
+  meanwhile `c` will be unsubscribed eagerly, even before `b` emits
+
+  And vice verca:
+  When `a` is falsy — `b` is not used and we'll wait `c` to emit,
+  meanwhile `b` will be unsubscribed eagerly, even before `c` emits
+
+  Another example:
+
+  ```ts
+  compute(() => $(a) ? $(b) + $.weak(c) : $.weak(c))
+  ```
+
+  When `a` is falsy — `b` is not used and will be dropped, `c` is used
+  When `a` becomes truthy - `b` and `c` are used
+  Although `c` will now have to wait for `b` to emit, which takes indefinite time
+  And that's when we might want to mark `c` for **eager unsubscription**, until `a` or `b` emits
+
+
+See examples for more use-case details
 
 ## 💃 Examples
 
-Instant evaluation:
+### Instant evaluation:
 
 ```ts
 const o = of(1);
@@ -46,7 +105,9 @@ const r = computed(() => $(o));
 r.subscribe(console.log); // > 1
 ```
 
-Delayed evaluation, when `o` emits:
+### Delayed evaluation:
+
+_`computed` waits for Observable `o` to emit a value_
 
 ```ts
 const o = new Subject();
@@ -55,7 +116,9 @@ r.subscribe(console.log);
 o.next('🐈'); // > 🐈
 ```
 
-Expression with two observables:
+### Two Observables:
+
+_recompute `c` with latest `a` and `b`, only when `b` updates_
 
 ```ts
 const a = new BehaviorSubject('#');
@@ -67,17 +130,70 @@ a.next('💡'); // ~no update~
 b.next(42); // > 💡42
 ```
 
+### Filtering:
+
+_use [NEVER](https://rxjs.dev/api/index/const/NEVER) to suspend emission till `source$` emits again_
+
+```ts
+const source$ = timer(0, 1_000);
+const even$ = computed(() => $(source$) % 2 == 0 ? _(source$) : _(NEVER));
+```
+
+### Switchmap:
+
+_fetch data every second_
+
+```ts
+function fetch(x){
+  // mock delayed fetching of x
+  return of('📦' + x).pipe(delay(100));
+}
+
+const a = timer(0, 1_000);
+const b = computed(() => fetch($(a)));
+const c = computed(() => $($(b)));
+c.subscribe(console.log);
+// > 📦 1
+// > 📦 2
+// > 📦 3
+// > …
+```
+
 ## ⚠️ Precautions
+
+### Sub-functions
+
+`$` and `_` memorize Observables that you pass to them. That is done to keep subscriptions and values and not to re-subscribe to same `$(O)` on each re-run.
+
+Therefore if you create a new Observable on each run of the expression:
+
+```ts
+let a = timer(0, 100);
+let b = timer(0, 1000);
+let c = computed(() => $(a) + $(fetch($(b))));
+
+function fetch(): Observable<any> {
+  return ajax.getJSON('…');
+}
+```
+
+It might lead to unexpected fetches with each `a` emission!
+
+If that's not what we need — we can go two ways:
+
+- create a separate `computed()` that will call `fetch` only when `b` changes — see [switchMap](#switchmap) example for details
+
+- use some memoization or caching technique on `fetch` function that would return same Observable, when called with same arguments
 
 ### Side-effects
 
-If an observable doesn't emit a synchronous value when it is subscribed, the expression will be **interrupted midflight** until observable emits.
-Therefore side-effects are dangerous inside `computed`. E.g:
+If an Observable doesn't emit a synchronous value when it is subscribed, the expression will be **interrupted midflight** until the Observable emits.
+So if you must make side-effects inside `computed` — put that after reading from streams:
 
 ```ts
 const o = new Subject();
 computed(() => {
-  console.log('Hello'); // perform a side-effect
+  console.log('Hello'); // DANGEROUS: perform a side-effect before reading from stream
   return $(o);          // will fail here since o has not emitted yet
 }).subscribe(console.log);
 o.next('World');
@@ -89,34 +205,36 @@ o.next('World');
  */
 ```
 
-*We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to handle this*
-
-### Logic branching
-
-Logic branching might lead to late subscription & unpredictable results:
+ While:
 
 ```ts
-const a = timer(0, 1000).pipe( take(2) );
-const b = timer(0, 1000).pipe( take(2) );
-
+const o = new Subject();
 computed(() => {
-  if ($(a) % 2) return $(b);
-  return $(a);
-})
-.subscribe(console.log);
+  let value = $(o); // will fail here since o has not emitted yet
+  console.log('Hello'); // SAFE: perform a side-effect after reading from stream
+  return value;
+}).subscribe(console.log);
+o.next('World');
 
 /** OUTPUT:
- * > 0
- * > 0
- * > 1
+ * > Hello
+ * > World
  */
 ```
 
-*We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to handle this*
+*We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to help with this*
+
+### Logic branching
+
+Logic branches might lead to late subscription to a given Observable, because it was not seen on previous runs. And if your Observable doesn't produce a value synchronously when subscribed — then expression will be **interrupted midflight** until any visited Observable from this latest run emits a new value.
+
+*We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to help with this*
+
+Also note that you might want different handling of unused subscriptions, please see [strength](#-strength) section for details.
 
 ### Synchronous values skipping
 
-Currently `computed` might skip sync emissions and run only with latest value emmitted, e.g.:
+Currently `computed` will skip synchronous emissions and run expression only with latest value emmitted, e.g.:
 
 ```ts
 const o = of('a', 'b', 'c');
@@ -128,7 +246,7 @@ computed(() => $(o)).subscribe(console.log);
  */
 ```
 
-*This will probably be fixed in future updates*
+*This might be fixed in future updates*
 
 ## 🤝 Want to contribute to this project?
 
