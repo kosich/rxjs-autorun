@@ -26,7 +26,7 @@ Or **[try it online](https://stackblitz.com/edit/rxjs-autorun-repl?file=index.ts
 
 ## 🔧 API
 
-- `computed` returns an Observable that will emit evaluation resulst with each update
+- `computed` returns an Observable that will emit evaluation results with each update
 
 - `autorun` internally subscribes to `computed` and returns the subscription
 
@@ -69,7 +69,7 @@ b.next(42); // > 💡42
 
 ## ⚠️ Precautions
 
-### Sideeffects
+### Side-effects
 
 If an observable doesn't emit a synchronous value when it is subscribed, the expression will be **interrupted midflight** until observable emits.
 Therefore side-effects are dangerous inside `computed`. E.g:
@@ -134,7 +134,7 @@ computed(() => $(o)).subscribe(console.log);
 
 That will be awesome!
 
-Please create an issue before submiting a PR — we'll be able to discuss it first!
+Please create an issue before submitting a PR — we'll be able to discuss it first!
 
 Thanks!
 
