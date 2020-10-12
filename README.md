@@ -94,7 +94,7 @@ See examples for more use-case details
 
 ## 💃 Examples
 
-Instant evaluation:
+### Instant evaluation:
 
 ```ts
 const o = of(1);
@@ -102,7 +102,9 @@ const r = computed(() => $(o));
 r.subscribe(console.log); // > 1
 ```
 
-Delayed evaluation, when `o` emits:
+### Delayed evaluation:
+
+_`computed` waits for observable `o` to emit a value_
 
 ```ts
 const o = new Subject();
@@ -111,7 +113,9 @@ r.subscribe(console.log);
 o.next('🐈'); // > 🐈
 ```
 
-Expression with two observables:
+### Two observables:
+
+_recompute `c` with latest `a` and `b`, only when `b` updates_
 
 ```ts
 const a = new BehaviorSubject('#');
@@ -123,7 +127,60 @@ a.next('💡'); // ~no update~
 b.next(42); // > 💡42
 ```
 
+### Filtering:
+
+_use [EMPTY](https://rxjs.dev/api/index/const/EMPTY) to suspend emission till `source$` emits again_
+
+```ts
+const source$ = timer(0, 1_000);
+const even$ = computed(() => $(source$) % 2 == 0 ? _(source$) : _(EMPTY));
+```
+
+### Switchmap:
+
+_fetch data every second_
+
+```ts
+function fetch(x){
+  // mock delayed fetching of x
+  return of('📦' + x).pipe(delay(100));
+}
+
+const a = timer(0, 1_000);
+const b = computed(() => fetch($(a)));
+const c = computed(() => $($(b)));
+c.subscribe(console.log);
+// > 📦 1
+// > 📦 2
+// > 📦 3
+// > …
+```
+
 ## ⚠️ Precautions
+
+### Sub-functions
+
+`$` and `_` memorize observables that you pass to them. That is done to keep subscriptions and values and not to re-subscribe to same `$(O)` on each re-run.
+
+Therefore if you create a new Observable on each run of the expression:
+
+```ts
+let a = timer(0, 100);
+let b = timer(0, 1000);
+let c = computed(() => $(a) + $(fetch($(b))));
+
+function fetch(): Observable<any> {
+  return ajax.getJSON('…');
+}
+```
+
+It might lead to unexpected fetches with each `a` emission!
+
+If that's not what we need — we can go two ways:
+
+- create a separate `computed()` that will call `fetch` only when `b` changes — see [switchMap](#switchmap) example for details
+
+- use some memoization or caching technique on `fetch` function that would return same observable, when called with same arguments
 
 ### Side-effects
 
@@ -170,7 +227,7 @@ Logic branches might lead to late subscription to a given Observable, because it
 
 *We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to help with this*
 
-Also note that you might want different handling of unused subscriptions, please see []() section for details.
+Also note that you might want different handling of unused subscriptions, please see [strength](#-strength) section for details.
 
 ### Synchronous values skipping
 
