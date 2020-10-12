@@ -38,6 +38,8 @@ Your can access values from Observables inside `computed` (or `autorun`) in two 
 
 - `_(O)` still provides latest value to `computed`, but doesn't enforce re-evaluation with `O` emission
 
+Both functions would interrupt midflight if `O` has not emitted yet and doesn't produce a value synchronously.
+
 ### 💪 Strength
 
 Some times you want to manage what to do with **subscription of an Observable that is not currently used**.
@@ -50,7 +52,9 @@ So we provide three levels of subscription strength:
   compute(() => $(a) ? $(b) : 0)
   ```
 
-  when `a` is falsy — `b` is not used and by default will be **dropped**
+  when `a` is falsy — `b` is not used and will be **dropped when expression finishes**
+
+  _NOTE: `$(…)` has normal strength, but you can also be explicit about that via `$.normal(…)`_
 
 - `strong` - will keep the subscription for the life of expression
 
@@ -64,7 +68,20 @@ So we provide three levels of subscription strength:
 - `weak` - will unsubscribe eagerly, if waiting for other observable to emit
 
   ```ts
-  compute(() => $(a) ? $(b) + $(c) : $(c))
+  compute(() => $(a) ? $.weak(b) : $.weak(c));
+  ```
+
+  When `a` is truthy — `c` is not used and we'll wait `b` to emit,
+  meanwhile `c` will be unsubscribed eagerly, even before `b` emits
+
+  And vice verca:
+  When `a` is falsy — `b` is not used and we'll wait `c` to emit,
+  meanwhile `b` will be unsubscribed eagerly, even before `c` emits
+
+  Another example:
+
+  ```ts
+  compute(() => $(a) ? $(b) + $.weak(c) : $.weak(c))
   ```
 
   When `a` is falsy — `b` is not used and will be dropped, `c` is used
@@ -73,7 +90,7 @@ So we provide three levels of subscription strength:
   And that's when we might want to mark `c` for **eager unsubscription**, until `a` or `b` emits
 
 
-See examples for more details
+See examples for more use-case details
 
 ## 💃 Examples
 
@@ -111,12 +128,12 @@ b.next(42); // > 💡42
 ### Side-effects
 
 If an observable doesn't emit a synchronous value when it is subscribed, the expression will be **interrupted midflight** until observable emits.
-Therefore side-effects are dangerous inside `computed`. E.g:
+So if you must make side-effects inside `computed` — put that after reading streams:
 
 ```ts
 const o = new Subject();
 computed(() => {
-  console.log('Hello'); // perform a side-effect
+  console.log('Hello'); // DANGEROUS: perform a side-effect before reading from stream
   return $(o);          // will fail here since o has not emitted yet
 }).subscribe(console.log);
 o.next('World');
@@ -128,34 +145,36 @@ o.next('World');
  */
 ```
 
-*We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to handle this*
-
-### Logic branching
-
-Logic branching might lead to late subscription & unpredictable results:
+ While:
 
 ```ts
-const a = timer(0, 1000).pipe( take(2) );
-const b = timer(0, 1000).pipe( take(2) );
-
+const o = new Subject();
 computed(() => {
-  if ($(a) % 2) return $(b);
-  return $(a);
-})
-.subscribe(console.log);
+  let value = $(o); // will fail here since o has not emitted yet
+  console.log('Hello'); // SAFE: perform a side-effect after reading from stream
+  return value;
+}).subscribe(console.log);
+o.next('World');
 
 /** OUTPUT:
- * > 0
- * > 0
- * > 1
+ * > Hello
+ * > World
  */
 ```
 
-*We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to handle this*
+*We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to help with this*
+
+### Logic branching
+
+Logic branches might lead to late subscription to a given Observable, because it was not seen on previous runs. And if your observable doesn't produce a value synchronously when subscribed — then expression will be **interrupted midflight** until any visited Observable from this run emits a new value.
+
+*We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to help with this*
+
+Also note that you might want different handling of unused subscriptions, please see []() section for details.
 
 ### Synchronous values skipping
 
-Currently `computed` might skip sync emissions and run only with latest value emmitted, e.g.:
+Currently `computed` will skip synchronous emissions and run expression only with latest value emmitted, e.g.:
 
 ```ts
 const o = of('a', 'b', 'c');
@@ -167,7 +186,7 @@ computed(() => $(o)).subscribe(console.log);
  */
 ```
 
-*This will probably be fixed in future updates*
+*This might be fixed in future updates*
 
 ## 🤝 Want to contribute to this project?
 
