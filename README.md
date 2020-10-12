@@ -30,9 +30,48 @@ Or **[try it online](https://stackblitz.com/edit/rxjs-autorun-repl?file=index.ts
 
 - `autorun` internally subscribes to `computed` and returns the subscription
 
+### 👓 Tracking
+
+Your can access values from Observables inside `computed` (or `autorun`) in two ways:
+
 - `$(O)` tells `computed` that it should be re-evaluated when `O` emits, with it's latest value
 
 - `_(O)` still provides latest value to `computed`, but doesn't enforce re-evaluation with `O` emission
+
+### 💪 Strength
+
+Some times you want to manage what to do with **subscription of an Observable that is not currently used**.
+
+So we provide three levels of subscription strength:
+
+- `normal` - default - will unsubscribe if the latest run of expression didn't use this observable
+
+  ```ts
+  compute(() => $(a) ? $(b) : 0)
+  ```
+
+  when `a` is falsy — `b` is not used and by default will be **dropped**
+
+- `strong` - will keep the subscription for the life of expression
+
+  ```ts
+  compute(() => $(a) ? $.strong(b) : 0)
+  ```
+
+  when `a` is falsy — `b` is not used, but the subscription will be **kept**
+
+
+- `weak` - will unsubscribe eagerly, if waiting for other observable to emit
+
+  ```ts
+  compute(() => $(a) ? $(b) + $(c) : $(c))
+  ```
+
+  When `a` is falsy — `b` is not used and will be dropped, `c` is used
+  When `a` becomes truthy - `b` and `c` are used
+  Although `c` will now have to wait for `b` to emit, which takes indefinite time
+  And that's when we might want to mark `c` for **eager unsubscription**, until `a` or `b` emits
+
 
 See examples for more details
 
