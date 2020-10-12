@@ -10,9 +10,7 @@
   </h1>
 </div>
 
-Autorun re-evaluates given expression, whenever dependant observables emit
-
-Tastes best with Observables that always contain a value, such as `BehaviorSubject`s, `of`, `startWith`, etc.
+Re-runs given expression whenever dependant Observables emit
 
 **⚠️ WARNING:** use at your own risk!
 
@@ -32,21 +30,25 @@ Or **[try it online](https://stackblitz.com/edit/rxjs-autorun-repl?file=index.ts
 
 ### 👓 Tracking
 
-Your can access values from Observables inside `computed` (or `autorun`) in two ways:
+You can read values from Observables inside `computed` (or `autorun`) in two ways:
 
 - `$(O)` tells `computed` that it should be re-evaluated when `O` emits, with it's latest value
 
 - `_(O)` still provides latest value to `computed`, but doesn't enforce re-evaluation with `O` emission
 
-Both functions would interrupt midflight if `O` has not emitted yet and doesn't produce a value synchronously.
+Both functions would interrupt midflight if `O` has not emitted before and doesn't produce a value synchronously.
+
+If you don't want interruptions — try Observables that always contain a value, such as `BehaviorSubject`s, `of`, `startWith`, etc.
+
+Usually this is all one needs when to use `rxjs-autorun`
 
 ### 💪 Strength
 
-Some times you want to manage what to do with **subscription of an Observable that is not currently used**.
+Some times you need to tweak what to do with **subscription of an Observable that is not currently used**.
 
 So we provide three levels of subscription strength:
 
-- `normal` - default - will unsubscribe if the latest run of expression didn't use this observable
+- `normal` - default - will unsubscribe if the latest run of expression didn't use this Observable:
 
   ```ts
   compute(() => $(a) ? $(b) : 0)
@@ -54,9 +56,10 @@ So we provide three levels of subscription strength:
 
   when `a` is falsy — `b` is not used and will be **dropped when expression finishes**
 
-  _NOTE: `$(…)` has normal strength, but you can also be explicit about that via `$.normal(…)`_
+  _NOTE: when you use `$(…)` — it applies normal strength, but you can be explicit about that via `$.normal(…)` notation_
 
-- `strong` - will keep the subscription for the life of expression
+
+- `strong` - will keep the subscription for the life of the expression:
 
   ```ts
   compute(() => $(a) ? $.strong(b) : 0)
@@ -65,7 +68,7 @@ So we provide three levels of subscription strength:
   when `a` is falsy — `b` is not used, but the subscription will be **kept**
 
 
-- `weak` - will unsubscribe eagerly, if waiting for other observable to emit
+- `weak` - will unsubscribe eagerly, if waiting for other Observable to emit:
 
   ```ts
   compute(() => $(a) ? $.weak(b) : $.weak(c));
@@ -104,7 +107,7 @@ r.subscribe(console.log); // > 1
 
 ### Delayed evaluation:
 
-_`computed` waits for observable `o` to emit a value_
+_`computed` waits for Observable `o` to emit a value_
 
 ```ts
 const o = new Subject();
@@ -113,7 +116,7 @@ r.subscribe(console.log);
 o.next('🐈'); // > 🐈
 ```
 
-### Two observables:
+### Two Observables:
 
 _recompute `c` with latest `a` and `b`, only when `b` updates_
 
@@ -129,11 +132,11 @@ b.next(42); // > 💡42
 
 ### Filtering:
 
-_use [EMPTY](https://rxjs.dev/api/index/const/EMPTY) to suspend emission till `source$` emits again_
+_use [NEVER](https://rxjs.dev/api/index/const/NEVER) to suspend emission till `source$` emits again_
 
 ```ts
 const source$ = timer(0, 1_000);
-const even$ = computed(() => $(source$) % 2 == 0 ? _(source$) : _(EMPTY));
+const even$ = computed(() => $(source$) % 2 == 0 ? _(source$) : _(NEVER));
 ```
 
 ### Switchmap:
@@ -160,7 +163,7 @@ c.subscribe(console.log);
 
 ### Sub-functions
 
-`$` and `_` memorize observables that you pass to them. That is done to keep subscriptions and values and not to re-subscribe to same `$(O)` on each re-run.
+`$` and `_` memorize Observables that you pass to them. That is done to keep subscriptions and values and not to re-subscribe to same `$(O)` on each re-run.
 
 Therefore if you create a new Observable on each run of the expression:
 
@@ -180,12 +183,12 @@ If that's not what we need — we can go two ways:
 
 - create a separate `computed()` that will call `fetch` only when `b` changes — see [switchMap](#switchmap) example for details
 
-- use some memoization or caching technique on `fetch` function that would return same observable, when called with same arguments
+- use some memoization or caching technique on `fetch` function that would return same Observable, when called with same arguments
 
 ### Side-effects
 
-If an observable doesn't emit a synchronous value when it is subscribed, the expression will be **interrupted midflight** until observable emits.
-So if you must make side-effects inside `computed` — put that after reading streams:
+If an Observable doesn't emit a synchronous value when it is subscribed, the expression will be **interrupted midflight** until the Observable emits.
+So if you must make side-effects inside `computed` — put that after reading from streams:
 
 ```ts
 const o = new Subject();
@@ -223,7 +226,7 @@ o.next('World');
 
 ### Logic branching
 
-Logic branches might lead to late subscription to a given Observable, because it was not seen on previous runs. And if your observable doesn't produce a value synchronously when subscribed — then expression will be **interrupted midflight** until any visited Observable from this run emits a new value.
+Logic branches might lead to late subscription to a given Observable, because it was not seen on previous runs. And if your Observable doesn't produce a value synchronously when subscribed — then expression will be **interrupted midflight** until any visited Observable from this latest run emits a new value.
 
 *We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to help with this*
 
