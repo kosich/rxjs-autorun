@@ -108,10 +108,8 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         // Mark all deps as untracked and unused
         const maybeRestoreStrength: Observable<any>[] = [];
         for (let [key, dep] of deps.entries()) {
-            // DO NOT MERGE THIS!!!
-            // ...
-            // dep.track = false;
-            // dep.used = false;
+            dep.track = false;
+            dep.used = false;
             if (dep.strength === Strength.Normal) {
                 // Reset normal strength to weak when last run was successfull.
                 dep.strength = Strength.Weak;
