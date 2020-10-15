@@ -2,7 +2,7 @@ import { EMPTY, Observable, of, Subject, Subscription, throwError } from 'rxjs';
 import { distinctUntilChanged, startWith, switchMap, takeWhile } from 'rxjs/operators';
 
 
-enum Strength {
+const enum Strength {
     Weak = 0,
     Normal = 1,
     Strong = 2
@@ -18,22 +18,26 @@ interface TrackEntry<V> {
     strength: Strength;
 }
 
-const ERROR_STUB = Object.create(null);
-
 type $Fn = <T>(o: Observable<T>) => T;
 type Cb<T> = (...args: any[]) => T;
-
-type Trackers = {
-    weak: $Fn;
-    normal: $Fn;
-    strong: $Fn;
-}
-type $FnWithTrackers = $Fn & Trackers;
 
 enum Update {
     Value,
     Completion
-};
+}
+
+interface $FnWithTrackers extends $Fn {
+    weak: $Fn;
+    normal: $Fn;
+    strong: $Fn;
+}
+
+interface Context {
+    _: $FnWithTrackers;
+    $: $FnWithTrackers;
+}
+
+const ERROR_STUB = Object.create(null);
 
 export function autorun<T>(fn: Cb<T>) {
     return computed<T>(fn).subscribe();
@@ -44,10 +48,6 @@ errorTracker.weak = errorTracker;
 errorTracker.normal = errorTracker;
 errorTracker.strong = errorTracker;
 
-type Context = {
-    _: $FnWithTrackers,
-    $: $FnWithTrackers
-}
 let context: Context = {
     _: errorTracker,
     $: errorTracker
@@ -215,6 +215,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
                         if (isAsync && v.track) {
                             update$.next(Update.Value);
                         }
+
                         if (!hadValue && !track) {
                             // Untracked dep now has it's first value. So really untrack it.
                             v.track = false;
