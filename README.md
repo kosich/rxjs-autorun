@@ -6,13 +6,14 @@
     <br/>
     <img src="https://dev-to-uploads.s3.amazonaws.com/i/509pq2z20ea3hn4d3ug5.png" width="358px" />
     <br/>
+    <sub><sub>Evaluates given expression whenever dependant Observables emit</sub></sub>
     <br/>
+    <br/>
+    <a href="https://www.npmjs.com/package/rxjs-autorun"><img src="https://img.shields.io/npm/v/rxjs-autorun" alt="NPM"></a>
+    <a href="https://bundlephobia.com/result?p=rxjs-autorun@latest"><img src="https://img.shields.io/bundlephobia/minzip/rxjs-autorun?label=gzipped" alt="Bundlephobia"></a>
+    <a href="https://opensource.org/licenses/MIT" rel="nofollow"><img src="https://img.shields.io/npm/l/rxjs-autorun" alt="MIT license"></a>
   </h1>
 </div>
-
-Re-runs given expression whenever dependant Observables emit
-
-**⚠️ WARNING:** use at your own risk!
 
 ## 📦 Install
 
@@ -22,78 +23,7 @@ npm i rxjs-autorun
 
 Or **[try it online](https://stackblitz.com/edit/rxjs-autorun-repl?file=index.ts)**
 
-## 🔧 API
-
-- `computed` returns an Observable that will emit evaluation results with each update
-
-- `autorun` internally subscribes to `computed` and returns the subscription
-
-### 👓 Tracking
-
-You can read values from Observables inside `computed` (or `autorun`) in two ways:
-
-- `$(O)` tells `computed` that it should be re-evaluated when `O` emits, with it's latest value
-
-- `_(O)` still provides latest value to `computed`, but doesn't enforce re-evaluation with `O` emission
-
-Both functions would interrupt midflight if `O` has not emitted before and doesn't produce a value synchronously.
-
-If you don't want interruptions — try Observables that always contain a value, such as `BehaviorSubject`s, `of`, `startWith`, etc.
-
-Usually this is all one needs when to use `rxjs-autorun`
-
-### 💪 Strength
-
-Some times you need to tweak what to do with **subscription of an Observable that is not currently used**.
-
-So we provide three levels of subscription strength:
-
-- `normal` - default - will unsubscribe if the latest run of expression didn't use this Observable:
-
-  ```ts
-  compute(() => $(a) ? $(b) : 0)
-  ```
-
-  when `a` is falsy — `b` is not used and will be **dropped when expression finishes**
-
-  _NOTE: when you use `$(…)` — it applies normal strength, but you can be explicit about that via `$.normal(…)` notation_
-
-
-- `strong` - will keep the subscription for the life of the expression:
-
-  ```ts
-  compute(() => $(a) ? $.strong(b) : 0)
-  ```
-
-  when `a` is falsy — `b` is not used, but the subscription will be **kept**
-
-
-- `weak` - will unsubscribe eagerly, if waiting for other Observable to emit:
-
-  ```ts
-  compute(() => $(a) ? $.weak(b) : $.weak(c));
-  ```
-
-  When `a` is truthy — `c` is not used and we'll wait `b` to emit,
-  meanwhile `c` will be unsubscribed eagerly, even before `b` emits
-
-  And vice verca:
-  When `a` is falsy — `b` is not used and we'll wait `c` to emit,
-  meanwhile `b` will be unsubscribed eagerly, even before `c` emits
-
-  Another example:
-
-  ```ts
-  compute(() => $(a) ? $(b) + $.weak(c) : $.weak(c))
-  ```
-
-  When `a` is falsy — `b` is not used and will be dropped, `c` is used
-  When `a` becomes truthy - `b` and `c` are used
-  Although `c` will now have to wait for `b` to emit, which takes indefinite time
-  And that's when we might want to mark `c` for **eager unsubscription**, until `a` or `b` emits
-
-
-See examples for more use-case details
+**⚠️ WARNING:** at this stage it's a very experimental library, use at your own risk!
 
 ## 💃 Examples
 
@@ -158,6 +88,88 @@ c.subscribe(console.log);
 // > 📦 3
 // > …
 ```
+
+
+## 🔧 API
+
+To run an expression, you must wrap it in one of these:
+
+- `computed` returns an Observable that will emit evaluation results with each **distinctive update**
+
+- `autorun` internally subscribes to `computed` and returns the subscription
+
+E.g:
+
+```ts
+computed(() => { … });
+```
+
+### 👓 Tracking
+
+You can read values from Observables inside `computed` (or `autorun`) in two ways:
+
+- `$(O)` tells `computed` that it should be re-evaluated when `O` emits, with it's latest value
+
+- `_(O)` still provides latest value to `computed`, but doesn't enforce re-evaluation with `O` emission
+
+Both functions would interrupt midflight if `O` has not emitted before and doesn't produce a value synchronously.
+
+If you don't want interruptions — try Observables that always contain a value, such as `BehaviorSubject`s, `of`, `startWith`, etc.
+
+Usually this is all one needs when to use `rxjs-autorun`
+
+### 💪 Strength
+
+Some times you need to tweak what to do with **subscription of an Observable that is not currently used**.
+
+So we provide three levels of subscription strength:
+
+- `normal` - default - will unsubscribe if the latest run of expression didn't use this Observable:
+
+  ```ts
+  computed(() => $(a) ? $(b) : 0)
+  ```
+
+  when `a` is falsy — `b` is not used and will be **dropped when expression finishes**
+
+  _NOTE: when you use `$(…)` — it applies normal strength, but you can be explicit about that via `$.normal(…)` notation_
+
+
+- `strong` - will keep the subscription for the life of the expression:
+
+  ```ts
+  computed(() => $(a) ? $.strong(b) : 0)
+  ```
+
+  when `a` is falsy — `b` is not used, but the subscription will be **kept**
+
+
+- `weak` - will unsubscribe eagerly, if waiting for other Observable to emit:
+
+  ```ts
+  computed(() => $(a) ? $.weak(b) : $.weak(c));
+  ```
+
+  When `a` is truthy — `c` is not used and we'll wait `b` to emit,
+  meanwhile `c` will be unsubscribed eagerly, even before `b` emits
+
+  And vice verca:
+  When `a` is falsy — `b` is not used and we'll wait `c` to emit,
+  meanwhile `b` will be unsubscribed eagerly, even before `c` emits
+
+  Another example:
+
+  ```ts
+  computed(() => $(a) ? $(b) + $.weak(c) : $.weak(c))
+  ```
+
+  When `a` is falsy — `b` is not used and will be dropped, `c` is used
+  When `a` becomes truthy - `b` and `c` are used
+  Although `c` will now have to wait for `b` to emit, which takes indefinite time
+  And that's when we might want to mark `c` for **eager unsubscription**, until `a` or `b` emits
+
+
+See examples for more use-case details
 
 ## ⚠️ Precautions
 
