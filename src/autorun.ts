@@ -67,20 +67,43 @@ export const _ = forwardTracker('_');
 export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
     const update$ = new Subject<Update>();
-    const createTrackers = (track: boolean) => {
-        const r  = createTracker(track, Strength.Normal) as $FnWithTrackers;
-        r.weak   = createTracker(track, Strength.Weak);
-        r.normal = createTracker(track, Strength.Normal);
-        r.strong = createTracker(track, Strength.Strong);
-        return r;
-    };
+
     const $ = createTrackers(true);
     const _ = createTrackers(false);
 
     let error: any;
     let hasError = false;
 
-    const anyDepRunning = () => {
+    const sub = update$
+        .pipe(
+            // run fn() and completion checker instantly
+            startWith(Update.Value, Update.Completion),
+            takeWhile(u => u !== Update.Completion || anyDepRunning()),
+            switchMap(u => u === Update.Value ? runFn() : EMPTY),
+            distinctUntilChanged(),
+        )
+        .subscribe(observer);
+
+    // destroy all subscriptions
+    sub.add(() => {
+        deps.forEach((entry) => {
+            entry.subscription?.unsubscribe();
+        });
+        update$.complete();
+        deps.clear();
+    });
+
+    return sub;
+
+    function createTrackers (track: boolean) {
+        const r  = createTracker(track, Strength.Normal) as $FnWithTrackers;
+        r.weak   = createTracker(track, Strength.Weak);
+        r.normal = createTracker(track, Strength.Normal);
+        r.strong = createTracker(track, Strength.Strong);
+        return r;
+    }
+
+    function anyDepRunning () {
         for (let dep of deps.values()) {
             if (dep.track && !dep.completed) {
                 // One of the $-tracked deps is still running
@@ -91,7 +114,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         return false;
     }
 
-    const removeUnusedDeps = (ofStrength: Strength) => {
+    function removeUnusedDeps (ofStrength: Strength) {
         for (let [key, { used, subscription, strength }] of deps.entries()) {
             if (used || strength > ofStrength) {
                 continue;
@@ -101,7 +124,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         }
     }
 
-    const runFn = () => {
+    function runFn () {
         if (hasError) {
             return throwError(error);
         }
@@ -137,26 +160,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         } finally {
             context = prevCtxt;
         }
-    };
-
-    const sub = update$
-        .pipe(
-            // run fn() and completion checker instantly
-            startWith(Update.Value, Update.Completion),
-            takeWhile(u => u !== Update.Completion || anyDepRunning()),
-            switchMap(u => u === Update.Value ? runFn() : EMPTY),
-            distinctUntilChanged(),
-        )
-        .subscribe(observer);
-
-    // destroy all subscriptions
-    sub.add(() => {
-        deps.forEach((entry) => {
-            entry.subscription?.unsubscribe();
-        });
-        update$.complete();
-        deps.clear();
-    });
+    }
 
     function createTracker(track: boolean, strength: Strength) {
         return function $<O>(o: Observable<O>): O {
@@ -245,6 +249,4 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
             }
         };
     }
-
-    return sub;
 });
