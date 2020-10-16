@@ -37,6 +37,8 @@ interface Context {
     $: $FnWithTrackers;
 }
 
+// an error to make mid-flight interruptions
+// when a value is still not available
 const HALT_ERROR = Object.create(null);
 
 export function autorun<T>(fn: Cb<T>) {
@@ -75,8 +77,11 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
     const update$ = new Subject<Update>();
     const error$ = new Subject<void>();
 
-    const $ = createTrackers(true);
-    const _ = createTrackers(false);
+    // context to be used for running expression
+    const newCtx = {
+        $: createTrackers(true),
+        _: createTrackers(false)
+    };
 
     const sub = merge(update$, error$)
         .pipe(
@@ -91,7 +96,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
     // on unsubscribe/complete we destroy all subscriptions
     sub.add(() => {
         deps.forEach((entry) => {
-            entry.subscription?.unsubscribe();
+            entry.subscription.unsubscribe();
         });
         update$.complete();
         deps.clear();
@@ -110,16 +115,6 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         return false;
     }
 
-    function removeUnusedDeps (ofStrength: Strength) {
-        for (let [key, { used, subscription, strength }] of deps.entries()) {
-            if (used || strength > ofStrength) {
-                continue;
-            }
-            subscription?.unsubscribe();
-            deps.delete(key);
-        }
-    }
-
     function runFn () {
         // Mark all deps as untracked and unused
         const maybeRestoreStrength: Observable<any>[] = [];
@@ -133,7 +128,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
             }
         }
         const prevCtxt = context;
-        context = {$, _};
+        context = newCtx;
         try {
             const rsp = fn();
             removeUnusedDeps(Strength.Normal);
@@ -155,6 +150,16 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
             return throwError(e);
         } finally {
             context = prevCtxt;
+        }
+    }
+
+    function removeUnusedDeps (ofStrength: Strength) {
+        for (let [key, dep] of deps.entries()) {
+            if (dep.used || dep.strength > ofStrength) {
+                continue;
+            }
+            dep.subscription.unsubscribe();
+            deps.delete(key);
         }
     }
 
@@ -204,7 +209,6 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
             // NOTE: we will synchronously (immediately) evaluate observables
             // that can synchronously emit a value. Such observables as:
             // - of(…)
-            // - timer(0, …)
             // - o.pipe( startWith(…) )
             // - BehaviorSubject
             // - ReplaySubject
