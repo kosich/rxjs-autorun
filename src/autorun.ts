@@ -18,14 +18,14 @@ interface TrackEntry<V> {
     strength: Strength;
 }
 
-type $Fn = <T>(o: Observable<T>) => T;
-type Cb<T> = (...args: any[]) => T;
+type Cb<T> = () => T;
 
-enum Update {
+const enum Update {
     Value,
     Completion
 }
 
+type $Fn = <T>(o: Observable<T>) => T;
 interface $FnWithTrackers extends $Fn {
     weak: $Fn;
     normal: $Fn;
