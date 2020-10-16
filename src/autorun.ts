@@ -128,7 +128,9 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
             }
             removeUnusedDeps(Strength.Weak);
             // rethrow original errors
-            if (e != ERROR_STUB) {
+            // NOTE: check requires === if e is primitive, JS engine will try to
+            //       convert ERROR_STUB to primitive
+            if (e !== ERROR_STUB) {
                 throw e;
             }
             return hasError ? throwError(error) : EMPTY;
