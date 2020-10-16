@@ -1,5 +1,5 @@
 import { EMPTY, merge, Observable, of, Subject, Subscription, throwError } from 'rxjs';
-import { distinctUntilChanged, startWith, switchMap, takeWhile } from 'rxjs/operators';
+import { distinctUntilChanged, filter, mergeMap, startWith, takeWhile } from 'rxjs/operators';
 
 
 const enum Strength {
@@ -87,8 +87,9 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         .pipe(
             // run fn() and completion checker instantly
             startWith(Update.Value, Update.Completion),
-            takeWhile(u => u !== Update.Completion || anyDepRunning()),
-            switchMap(u => u === Update.Value ? runFn() : EMPTY),
+            takeWhile(u => u === Update.Value || anyDepRunning()),
+            filter(u => u === Update.Value),
+            mergeMap(runFn),
             distinctUntilChanged(),
         )
         .subscribe(observer);
