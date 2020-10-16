@@ -43,7 +43,13 @@ export function autorun<T>(fn: Cb<T>) {
     return computed<T>(fn).subscribe();
 }
 
-const errorTracker = (() => { throw new Error('$ or _ can only be called within computed or autorun context'); }) as any as $FnWithTrackers;
+export class TrackerError extends Error {
+    constructor() {
+        super('$ or _ can only be called within computed or autorun context')
+    }
+}
+
+const errorTracker = (() => { throw new TrackerError(); }) as any as $FnWithTrackers;
 errorTracker.weak = errorTracker;
 errorTracker.normal = errorTracker;
 errorTracker.strong = errorTracker;
@@ -84,7 +90,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         )
         .subscribe(observer);
 
-    // destroy all subscriptions
+    // on unsubscribe/complete we destroy all subscriptions
     sub.add(() => {
         deps.forEach((entry) => {
             entry.subscription?.unsubscribe();
