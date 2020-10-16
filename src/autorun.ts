@@ -1,4 +1,4 @@
-import { EMPTY, Observable, of, Subject, Subscription, throwError } from 'rxjs';
+import { EMPTY, merge, Observable, of, Subject, Subscription, throwError } from 'rxjs';
 import { distinctUntilChanged, startWith, switchMap, takeWhile } from 'rxjs/operators';
 
 
@@ -11,7 +11,7 @@ const enum Strength {
 interface TrackEntry<V> {
     hasValue: boolean;
     value?: V;
-    subscription?: Subscription;
+    subscription: Subscription;
     track: boolean;
     used: boolean;
     completed: boolean;
@@ -37,7 +37,7 @@ interface Context {
     $: $FnWithTrackers;
 }
 
-const ERROR_STUB = Object.create(null);
+const HALT_ERROR = Object.create(null);
 
 export function autorun<T>(fn: Cb<T>) {
     return computed<T>(fn).subscribe();
@@ -73,14 +73,12 @@ export const _ = forwardTracker('_');
 export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
     const update$ = new Subject<Update>();
+    const error$ = new Subject<void>();
 
     const $ = createTrackers(true);
     const _ = createTrackers(false);
 
-    let error: any;
-    let hasError = false;
-
-    const sub = update$
+    const sub = merge(update$, error$)
         .pipe(
             // run fn() and completion checker instantly
             startWith(Update.Value, Update.Completion),
@@ -100,14 +98,6 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
     });
 
     return sub;
-
-    function createTrackers (track: boolean) {
-        const r  = createTracker(track, Strength.Normal) as $FnWithTrackers;
-        r.weak   = createTracker(track, Strength.Weak);
-        r.normal = createTracker(track, Strength.Normal);
-        r.strong = createTracker(track, Strength.Strong);
-        return r;
-    }
 
     function anyDepRunning () {
         for (let dep of deps.values()) {
@@ -131,9 +121,6 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
     }
 
     function runFn () {
-        if (hasError) {
-            return throwError(error);
-        }
         // Mark all deps as untracked and unused
         const maybeRestoreStrength: Observable<any>[] = [];
         for (let [key, dep] of deps.entries()) {
@@ -156,16 +143,27 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
                 deps.get(dep)!.strength = Strength.Normal;
             }
             removeUnusedDeps(Strength.Weak);
-            // rethrow original errors
+
+            // suppress mid-flight interruption error
             // NOTE: check requires === if e is primitive, JS engine will try to
             //       convert ERROR_STUB to primitive
-            if (e !== ERROR_STUB) {
-                throw e;
+            if (e === HALT_ERROR) {
+                return EMPTY;
             }
-            return hasError ? throwError(error) : EMPTY;
+
+            // rethrow original errors
+            return throwError(e);
         } finally {
             context = prevCtxt;
         }
+    }
+
+    function createTrackers (track: boolean) {
+        const r  = createTracker(track, Strength.Normal) as $FnWithTrackers;
+        r.weak   = createTracker(track, Strength.Weak);
+        r.normal = createTracker(track, Strength.Normal);
+        r.strong = createTracker(track, Strength.Strong);
+        return r;
     }
 
     function createTracker(track: boolean, strength: Strength) {
@@ -187,20 +185,22 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
                 if (v.hasValue) {
                     return v.value as O;
                 } else {
-                    throw ERROR_STUB;
+                    throw HALT_ERROR;
                 }
             }
 
             const v: TrackEntry<O> = {
                 hasValue: false,
                 value: void 0,
-                subscription: void 0,
+                // eagerly create subscription that can be destroyed
+                subscription: new Subscription(),
                 track: true,
                 used: true,
                 completed: false,
                 strength
             };
 
+            // Sync Code Section {{{
             // NOTE: we will synchronously (immediately) evaluate observables
             // that can synchronously emit a value. Such observables as:
             // - of(…)
@@ -210,10 +210,12 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
             // - ReplaySubject
             // - etc
             let isAsync = false;
-            v.subscription = o
-                .pipe(distinctUntilChanged())
+            let hasSyncError = false;
+            let syncError = void 0;
+            v.subscription.add(
+                o.pipe(distinctUntilChanged())
                 .subscribe({
-                    next: (value) => {
+                    next(value) {
                         const hadValue = v.hasValue;
                         v.hasValue = true;
                         v.value = value;
@@ -230,21 +232,27 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
                             update$.next(Update.Completion);
                         }
                     },
-                    error: e => {
-                        error = e;
-                        hasError = true;
+                    error(err) {
                         if (isAsync) {
-                            update$.next(Update.Value);
+                            error$.error(err);
+                        } else {
+                            syncError = err;
+                            hasSyncError = true;
                         }
                     },
-                    complete: () => {
+                    complete() {
                         v.completed = true;
                         if (isAsync && v.track) {
                             update$.next(Update.Completion);
                         }
                     }
-                });
+                })
+            );
+            if (hasSyncError){
+                throw syncError;
+            }
             isAsync = true;
+            // }}} End Of Sync Section
 
             deps.set(o, v);
 
@@ -252,7 +260,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
                 // Must have value because v.hasValue is true
                 return v.value!;
             } else {
-                throw ERROR_STUB;
+                throw HALT_ERROR;
             }
         };
     }
