@@ -213,6 +213,14 @@ describe('autorun', () => {
     });
 
     describe('error', () => {
+        it('will raise error if expression throws', () => {
+            const r = computed(() => { throw 42; });
+            sub = r.subscribe(observer);
+
+            expect(observer.next).not.toBeCalled();
+            expect(observer.error).toBeCalledWith(42);
+        });
+
         it('errors out when one of the deps errors out', () => {
             const o = new BehaviorSubject(1);
             const o2 = new BehaviorSubject(2);
