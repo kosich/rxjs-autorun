@@ -1,5 +1,5 @@
-import { EMPTY, Observable, of, Subject, Subscription, throwError } from 'rxjs';
-import { distinctUntilChanged, filter, mergeMap, startWith, takeWhile } from 'rxjs/operators';
+import { Observable, Subscription } from 'rxjs';
+import { distinctUntilChanged } from 'rxjs/operators';
 
 
 // an error to make mid-flight interruptions
@@ -33,9 +33,8 @@ export function autorun<T>(fn: Expression<T>) {
     return computed<T>(fn).subscribe();
 }
 
-export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(observer => {
+export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<T>(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
-    const update$ = new Subject<UpdateSignal>();
 
     // context to be used for running expression
     const newCtx = {
@@ -43,49 +42,24 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
         _: createTrackers(false)
     };
 
-    const sub = update$
-        .pipe(
-            // run fn() and completion checker instantly
-            // for synchronous and untrack-only expressions
-            startWith(UpdateSignal.Next, UpdateSignal.Complete),
-            // while any dependency is alive
-            takeWhile(shouldKeepAlive),
-            // re-run only on Update.Value
-            filter(u => u === UpdateSignal.Next),
-            mergeMap(runFn),
-            distinctUntilChanged(),
-        )
-        .subscribe(observer);
-
     // on unsubscribe/complete we destroy all subscriptions
-    sub.add(() => {
+    const sub = new Subscription(() => {
         deps.forEach(dep => {
             dep.subscription.unsubscribe();
         });
-        update$.complete();
-        deps.clear();
     });
+
+    // flag that indicates that current run might've affected completion status
+    // we'll check completion after the first run
+    let shouldCheckCompletion = true;
+
+    // initial run
+    runFn();
 
     return sub;
 
-    function shouldKeepAlive (u: UpdateSignal): boolean {
-        // not a completion signal
-        if (u !== UpdateSignal.Complete) {
-            return true;
-        }
 
-        // any dep is still running
-        for (let dep of deps.values()) {
-            if (dep.track && !dep.completed) {
-                // One of the $-tracked deps is still running
-                return true;
-            }
-        }
-        // All $-tracked deps completed
-        return false;
-    }
-
-    function runFn (): Observable<T> {
+    function runFn () {
         // Mark all deps as untracked and unused
         const maybeRestoreStrength: Observable<any>[] = [];
         deps.forEach((dep, key) => {
@@ -100,9 +74,9 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
         const prevCtxt = context;
         context = newCtx;
         try {
-            const rsp = fn();
+            const result = fn();
             removeUnusedDeps(Strength.Normal);
-            return of(rsp);
+            observer.next(result);
         } catch (e) {
             maybeRestoreStrength.forEach(dep => {
                 deps.get(dep)!.strength = Strength.Normal;
@@ -113,15 +87,37 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
             // NOTE: check requires === if e is primitive, JS engine will try to
             //       convert HALT_ERROR to primitive
             if (e === HALT_ERROR) {
-                return EMPTY;
+                return;
             }
 
             // rethrow original errors
-            return throwError(e);
+            observer.error(e);
         } finally {
             context = prevCtxt;
+
+            // if this run was flagged as potentially completing
+            if (shouldCheckCompletion) {
+                checkCompletion();
+            }
         }
     }
+
+    function checkCompletion () {
+        // reset the flag
+        shouldCheckCompletion = false;
+
+        // any dep is still running
+        for (let dep of deps.values()) {
+            if (dep.track && !dep.completed) {
+                // One of the $-tracked deps is still running
+                return;
+            }
+        }
+
+        // All $-tracked deps completed
+        observer.complete();
+    }
+
 
     function removeUnusedDeps (ofStrength: Strength) {
         deps.forEach((dep, key) => {
@@ -176,6 +172,8 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
                 completed: false
             };
 
+            deps.set(o, v);
+
             // Sync Code Section {{{
             // NOTE: we will synchronously (immediately) evaluate observables
             // that can synchronously emit a value. Such observables as:
@@ -195,21 +193,27 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
                         v.hasValue = true;
                         v.value = value;
 
-                        if (isAsync && v.track) {
-                            update$.next(UpdateSignal.Next);
+                        const isUntrackFirstValue = !hadValue && !track;
+
+                        // It could be that all tracked deps already completed.
+                        // So signal that completion state might have changed.
+                        if (isUntrackFirstValue) {
+                            shouldCheckCompletion = true;
                         }
 
-                        if (!hadValue && !track) {
+                        if (isAsync && v.track) {
+                            runFn();
+                        }
+
+                        if (isUntrackFirstValue) {
                             // Untracked dep now has it's first value. So really untrack it.
                             v.track = false;
-                            // It could be that all tracked deps already completed. So signal
-                            // that completion state might have changed.
-                            update$.next(UpdateSignal.Complete);
                         }
                     },
                     error(err) {
                         if (isAsync) {
-                            update$.error(err);
+                            // update$.error(err);
+                            observer.error(err);
                         } else {
                             syncError = err;
                             hasSyncError = true;
@@ -218,7 +222,8 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
                     complete() {
                         v.completed = true;
                         if (isAsync && v.track) {
-                            update$.next(UpdateSignal.Complete);
+                            checkCompletion();
+                            // update$.next(UpdateSignal.Complete);
                         }
                     }
                 })
@@ -229,8 +234,6 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
             isAsync = true;
             // }}} End Of Sync Section
 
-            deps.set(o, v);
-
             if (v.hasValue) {
                 // Must have value because v.hasValue is true
                 return v.value!;
@@ -239,7 +242,9 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
             }
         };
     }
-});
+})
+// distinct results for computed
+.pipe(distinctUntilChanged());
 
 type Expression<T> = () => T;
 
@@ -274,9 +279,4 @@ interface $FnWithTrackers extends $Fn {
     weak: $Fn;
     normal: $Fn;
     strong: $Fn;
-}
-
-const enum UpdateSignal {
-    Next,
-    Complete
 }
