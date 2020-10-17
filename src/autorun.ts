@@ -2,51 +2,12 @@ import { EMPTY, merge, Observable, of, Subject, Subscription, throwError } from 
 import { distinctUntilChanged, filter, mergeMap, startWith, takeWhile } from 'rxjs/operators';
 
 
-const enum Strength {
-    Weak = 0,
-    Normal = 1,
-    Strong = 2
-}
-
-interface TrackEntry<V> {
-    hasValue: boolean;
-    value?: V;
-    subscription: Subscription;
-    track: boolean;
-    used: boolean;
-    completed: boolean;
-    strength: Strength;
-}
-
-type Cb<T> = () => T;
-
-const enum Update {
-    Value,
-    Completion
-}
-
-type $Fn = <T>(o: Observable<T>) => T;
-interface $FnWithTrackers extends $Fn {
-    weak: $Fn;
-    normal: $Fn;
-    strong: $Fn;
-}
-
-interface Context {
-    _: $FnWithTrackers;
-    $: $FnWithTrackers;
-}
-
 // an error to make mid-flight interruptions
 // when a value is still not available
 const HALT_ERROR = Object.create(null);
 
-export function autorun<T>(fn: Cb<T>) {
-    return computed<T>(fn).subscribe();
-}
-
+// error if tracker is used out of autorun/computed context
 export const TrackerError = new Error('$ or _ can only be called within computed or autorun context');
-
 const errorTracker: $FnWithTrackers = () => { throw TrackerError; };
 errorTracker.weak = errorTracker;
 errorTracker.normal = errorTracker;
@@ -68,9 +29,13 @@ const forwardTracker = (tracker: keyof Context): $FnWithTrackers => {
 export const $ = forwardTracker('$');
 export const _ = forwardTracker('_');
 
-export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer => {
+export function autorun<T>(fn: Expression<T>) {
+    return computed<T>(fn).subscribe();
+}
+
+export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
-    const update$ = new Subject<Update>();
+    const update$ = new Subject<UpdateSignal>();
     const error$ = new Subject<void>();
 
     // context to be used for running expression
@@ -83,11 +48,11 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         .pipe(
             // run fn() and completion checker instantly
             // for synchronous and untrack-only expressions
-            startWith(Update.Value, Update.Completion),
+            startWith(UpdateSignal.Next, UpdateSignal.Complete),
             // while any dependency is alive
             takeWhile(shouldKeepAlive),
             // re-run only on Update.Value
-            filter(u => u === Update.Value),
+            filter(u => u === UpdateSignal.Next),
             mergeMap(runFn),
             distinctUntilChanged(),
         )
@@ -104,9 +69,9 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
 
     return sub;
 
-    function shouldKeepAlive (u: Update): boolean {
+    function shouldKeepAlive (u: UpdateSignal): boolean {
         // not a completion signal
-        if (u !== Update.Completion) {
+        if (u !== UpdateSignal.Complete) {
             return true;
         }
 
@@ -121,7 +86,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         return false;
     }
 
-    function runFn () {
+    function runFn (): Observable<T> {
         // Mark all deps as untracked and unused
         const maybeRestoreStrength: Observable<any>[] = [];
         deps.forEach((dep, key) => {
@@ -177,7 +142,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         return r;
     }
 
-    function createTracker(track: boolean, strength: Strength) {
+    function createTracker(track: boolean, strength: Strength): $Fn {
         return function $<O>(o: Observable<O>): O {
             if (deps.has(o)) {
                 const v = deps.get(o)!;
@@ -203,12 +168,13 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
             const v: TrackEntry<O> = {
                 hasValue: false,
                 value: void 0,
-                // eagerly create subscription that can be destroyed
+                // Eagerly create subscription that can be destroyed. This is a
+                // precaution if this entry is unsubscribed synchronously
                 subscription: new Subscription(),
+                strength,
                 track: true,
                 used: true,
-                completed: false,
-                strength
+                completed: false
             };
 
             // Sync Code Section {{{
@@ -231,7 +197,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
                         v.value = value;
 
                         if (isAsync && v.track) {
-                            update$.next(Update.Value);
+                            update$.next(UpdateSignal.Next);
                         }
 
                         if (!hadValue && !track) {
@@ -239,7 +205,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
                             v.track = false;
                             // It could be that all tracked deps already completed. So signal
                             // that completion state might have changed.
-                            update$.next(Update.Completion);
+                            update$.next(UpdateSignal.Complete);
                         }
                     },
                     error(err) {
@@ -253,7 +219,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
                     complete() {
                         v.completed = true;
                         if (isAsync && v.track) {
-                            update$.next(Update.Completion);
+                            update$.next(UpdateSignal.Complete);
                         }
                     }
                 })
@@ -275,3 +241,43 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
         };
     }
 });
+
+type Expression<T> = () => T;
+
+interface TrackEntry<V> {
+    hasValue: boolean;
+    value?: V;
+    /** subscription to source */
+    subscription: Subscription;
+    /** subscription strength */
+    strength: Strength;
+    /** is tracked $ or untracked _ */
+    track: boolean;
+    /** has been used in latest run */
+    used: boolean;
+    /** source completion status */
+    completed: boolean;
+}
+
+const enum Strength {
+    Weak = 0,
+    Normal = 1,
+    Strong = 2
+}
+
+interface Context {
+    _: $FnWithTrackers;
+    $: $FnWithTrackers;
+}
+
+type $Fn = <T>(o: Observable<T>) => T;
+interface $FnWithTrackers extends $Fn {
+    weak: $Fn;
+    normal: $Fn;
+    strong: $Fn;
+}
+
+const enum UpdateSignal {
+    Next,
+    Complete
+}
