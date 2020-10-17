@@ -82,8 +82,11 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
     const sub = merge(update$, error$)
         .pipe(
             // run fn() and completion checker instantly
+            // for synchronous and untrack-only expressions
             startWith(Update.Value, Update.Completion),
-            takeWhile(u => u === Update.Value || anyDepRunning()),
+            // while any dependency is alive
+            takeWhile(shouldKeepAlive),
+            // re-run only on Update.Value
             filter(u => u === Update.Value),
             mergeMap(runFn),
             distinctUntilChanged(),
@@ -101,7 +104,13 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
 
     return sub;
 
-    function anyDepRunning () {
+    function shouldKeepAlive (u: Update): boolean {
+        // not a completion signal
+        if (u !== Update.Completion) {
+            return true;
+        }
+
+        // any dep is still running
         for (let dep of deps.values()) {
             if (dep.track && !dep.completed) {
                 // One of the $-tracked deps is still running
