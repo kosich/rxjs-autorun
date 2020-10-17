@@ -111,7 +111,7 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
 
             // suppress mid-flight interruption error
             // NOTE: check requires === if e is primitive, JS engine will try to
-            //       convert ERROR_STUB to primitive
+            //       convert HALT_ERROR to primitive
             if (e === HALT_ERROR) {
                 return EMPTY;
             }
