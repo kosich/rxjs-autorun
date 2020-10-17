@@ -1,4 +1,4 @@
-import { EMPTY, merge, Observable, of, Subject, Subscription, throwError } from 'rxjs';
+import { EMPTY, Observable, of, Subject, Subscription, throwError } from 'rxjs';
 import { distinctUntilChanged, filter, mergeMap, startWith, takeWhile } from 'rxjs/operators';
 
 
@@ -36,7 +36,6 @@ export function autorun<T>(fn: Expression<T>) {
 export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
     const update$ = new Subject<UpdateSignal>();
-    const error$ = new Subject<void>();
 
     // context to be used for running expression
     const newCtx = {
@@ -44,7 +43,7 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
         _: createTrackers(false)
     };
 
-    const sub = merge(update$, error$)
+    const sub = update$
         .pipe(
             // run fn() and completion checker instantly
             // for synchronous and untrack-only expressions
@@ -210,7 +209,7 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable(
                     },
                     error(err) {
                         if (isAsync) {
-                            error$.error(err);
+                            update$.error(err);
                         } else {
                             syncError = err;
                             hasSyncError = true;
