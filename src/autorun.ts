@@ -45,13 +45,9 @@ export function autorun<T>(fn: Cb<T>) {
     return computed<T>(fn).subscribe();
 }
 
-export class TrackerError extends Error {
-    constructor() {
-        super('$ or _ can only be called within computed or autorun context')
-    }
-}
+export const TrackerError = new Error('$ or _ can only be called within computed or autorun context');
 
-const errorTracker = (() => { throw new TrackerError(); }) as any as $FnWithTrackers;
+const errorTracker: $FnWithTrackers = () => { throw TrackerError; };
 errorTracker.weak = errorTracker;
 errorTracker.normal = errorTracker;
 errorTracker.strong = errorTracker;
@@ -96,8 +92,8 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
 
     // on unsubscribe/complete we destroy all subscriptions
     sub.add(() => {
-        deps.forEach((entry) => {
-            entry.subscription.unsubscribe();
+        deps.forEach(dep => {
+            dep.subscription.unsubscribe();
         });
         update$.complete();
         deps.clear();
@@ -119,7 +115,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
     function runFn () {
         // Mark all deps as untracked and unused
         const maybeRestoreStrength: Observable<any>[] = [];
-        for (let [key, dep] of deps.entries()) {
+        deps.forEach((dep, key) => {
             dep.track = false;
             dep.used = false;
             if (dep.strength === Strength.Normal) {
@@ -127,7 +123,7 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
                 dep.strength = Strength.Weak;
                 maybeRestoreStrength.push(key);
             }
-        }
+        });
         const prevCtxt = context;
         context = newCtx;
         try {
@@ -135,9 +131,9 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
             removeUnusedDeps(Strength.Normal);
             return of(rsp);
         } catch (e) {
-            for (let dep of maybeRestoreStrength) {
+            maybeRestoreStrength.forEach(dep => {
                 deps.get(dep)!.strength = Strength.Normal;
-            }
+            });
             removeUnusedDeps(Strength.Weak);
 
             // suppress mid-flight interruption error
@@ -155,13 +151,13 @@ export const computed = <T>(fn: Cb<T>): Observable<T> => new Observable(observer
     }
 
     function removeUnusedDeps (ofStrength: Strength) {
-        for (let [key, dep] of deps.entries()) {
+        deps.forEach((dep, key) => {
             if (dep.used || dep.strength > ofStrength) {
-                continue;
+                return;
             }
             dep.subscription.unsubscribe();
             deps.delete(key);
-        }
+        });
     }
 
     function createTrackers (track: boolean) {
