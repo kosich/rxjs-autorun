@@ -65,12 +65,15 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
         deps.forEach((dep, key) => {
             dep.track = false;
             dep.used = false;
+            // setting normal strength to weak, so that if previously `a` was
+            // tracked as normal and now we only see `weak(a)` - we can mark it
+            // as weak. this is restored if halted
             if (dep.strength === Strength.Normal) {
-                // Reset normal strength to weak when last run was successfull.
                 dep.strength = Strength.Weak;
                 maybeRestoreStrength.push(key);
             }
         });
+
         const prevCtxt = context;
         context = newCtx;
         try {
@@ -78,20 +81,21 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
             removeUnusedDeps(Strength.Normal);
             observer.next(result);
         } catch (e) {
-            maybeRestoreStrength.forEach(dep => {
-                deps.get(dep)!.strength = Strength.Normal;
-            });
-            removeUnusedDeps(Strength.Weak);
-
-            // suppress mid-flight interruption error
-            // NOTE: check requires === if e is primitive, JS engine will try to
-            //       convert HALT_ERROR to primitive
+            // handling mid-flight interruption error
+            // NOTE: check requires === strict equality
             if (e === HALT_ERROR) {
-                return;
+                // restore lowered strength
+                maybeRestoreStrength.forEach(dep => {
+                    deps.get(dep)!.strength = Strength.Normal;
+                });
+                // clean-up weak subscriptions
+                removeUnusedDeps(Strength.Weak);
+            } else {
+                // rethrow original errors
+                observer.error(e);
+                // we're errored, no need to check completion
+                shouldCheckCompletion = false;
             }
-
-            // rethrow original errors
-            observer.error(e);
         } finally {
             context = prevCtxt;
 
@@ -109,7 +113,7 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
         // any dep is still running
         for (let dep of deps.values()) {
             if (dep.track && !dep.completed) {
-                // One of the $-tracked deps is still running
+                // one of the $-tracked deps is still running
                 return;
             }
         }
@@ -117,7 +121,6 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
         // All $-tracked deps completed
         observer.complete();
     }
-
 
     function removeUnusedDeps (ofStrength: Strength) {
         deps.forEach((dep, key) => {
@@ -163,8 +166,7 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
             const v: TrackEntry<O> = {
                 hasValue: false,
                 value: void 0,
-                // Eagerly create subscription that can be destroyed. This is a
-                // precaution if this entry is unsubscribed synchronously
+                // Eagerly create subscription that can be destroyed.
                 subscription: new Subscription(),
                 strength,
                 track: true,
@@ -212,7 +214,6 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
                     },
                     error(err) {
                         if (isAsync) {
-                            // update$.error(err);
                             observer.error(err);
                         } else {
                             syncError = err;
@@ -223,7 +224,6 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
                         v.completed = true;
                         if (isAsync && v.track) {
                             checkCompletion();
-                            // update$.next(UpdateSignal.Complete);
                         }
                     }
                 })
