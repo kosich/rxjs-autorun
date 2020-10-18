@@ -60,17 +60,17 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
 
 
     function runFn () {
-        // Mark all deps as untracked and unused
-        const maybeRestoreStrength: Observable<any>[] = [];
-        deps.forEach((dep, key) => {
+        // Mark all deps as untracked and unused, lowering normal to weak
+        const loweredStrengthDeps: TrackEntry<any>[] = [];
+        deps.forEach(dep => {
             dep.track = false;
             dep.used = false;
             // setting normal strength to weak, so that if previously `a` was
-            // tracked as normal and now we only see `weak(a)` - we can mark it
-            // as weak. this is restored if halted
+            // tracked as normal and in the latest run we only see `weak(a)` -
+            // we can mark it as weak. this is restored if halted
             if (dep.strength === Strength.Normal) {
                 dep.strength = Strength.Weak;
-                maybeRestoreStrength.push(key);
+                loweredStrengthDeps.push(dep);
             }
         });
 
@@ -85,8 +85,8 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
             // NOTE: check requires === strict equality
             if (e === HALT_ERROR) {
                 // restore lowered strength
-                maybeRestoreStrength.forEach(dep => {
-                    deps.get(dep)!.strength = Strength.Normal;
+                loweredStrengthDeps.forEach(dep => {
+                    dep.strength = Strength.Normal;
                 });
                 // clean-up weak subscriptions
                 removeUnusedDeps(Strength.Weak);
