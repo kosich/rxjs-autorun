@@ -8,7 +8,7 @@ const HALT_ERROR = Object.create(null);
 
 // error if tracker is used out of autorun/computed context
 export const TrackerError = new Error('$ or _ can only be called within computed or autorun context');
-const errorTracker: SuperTracker = () => { throw TrackerError; };
+const errorTracker: Trackers = () => { throw TrackerError; };
 errorTracker.weak = errorTracker;
 errorTracker.normal = errorTracker;
 errorTracker.strong = errorTracker;
@@ -18,8 +18,8 @@ let context: Context = {
     $: errorTracker
 };
 
-const forwardTracker = (tracker: keyof Context): SuperTracker => {
-    const r  = (<T>(o: Observable<T>): T => context[tracker](o)) as SuperTracker;
+const forwardTracker = (tracker: keyof Context): Trackers => {
+    const r  = (<T>(o: Observable<T>): T => context[tracker](o)) as Trackers;
     r.weak   = o => context[tracker].weak(o);
     r.normal = o => context[tracker].normal(o);
     r.strong = o => context[tracker].strong(o);
@@ -133,7 +133,7 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
     }
 
     function createTrackers (track: boolean) {
-        const r  = createTracker(track, Strength.Normal) as SuperTracker;
+        const r  = createTracker(track, Strength.Normal) as Trackers;
         r.weak   = createTracker(track, Strength.Weak);
         r.normal = createTracker(track, Strength.Normal);
         r.strong = createTracker(track, Strength.Strong);
@@ -141,7 +141,7 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
     }
 
     function createTracker(track: boolean, strength: Strength): Tracker {
-        return function $<O>(o: Observable<O>): O {
+        return function tracker<O>(o: Observable<O>): O {
             if (deps.has(o)) {
                 const v = deps.get(o)!;
                 v.used = true;
@@ -270,13 +270,14 @@ const enum Strength {
 }
 
 interface Context {
-    _: SuperTracker;
-    $: SuperTracker;
+    _: Trackers;
+    $: Trackers;
 }
 
-type Tracker = <T>(o: Observable<T>) => T;
-interface SuperTracker extends Tracker {
+interface Trackers extends Tracker {
     weak: Tracker;
     normal: Tracker;
     strong: Tracker;
 }
+
+type Tracker = <T>(o: Observable<T>) => T;
