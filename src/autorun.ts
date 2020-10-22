@@ -222,6 +222,19 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
                     },
                     complete() {
                         v.completed = true;
+
+                        // if we don't have a value — we interrupt evaluation
+                        // and complete output. See issue #22
+                        if (!v.hasValue) {
+                            observer.complete();
+
+                            // immediately halt the computation
+                            if (!isAsync) {
+                                hasSyncError = true;
+                                syncError = HALT_ERROR;
+                            }
+                        }
+
                         if (isAsync && v.track) {
                             checkCompletion();
                         }
