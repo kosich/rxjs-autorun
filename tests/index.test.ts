@@ -1,4 +1,4 @@
-import { BehaviorSubject, defer, Observable, of, Subject, Subscription, throwError } from 'rxjs';
+import { BehaviorSubject, defer, NEVER, Observable, of, Subject, Subscription, throwError } from 'rxjs';
 import { $, computed, _ } from '../src';
 
 describe('autorun', () => {
@@ -701,6 +701,31 @@ describe('autorun', () => {
                 expect(isO2Subscribed).toBeFalsy();
             });
         });
+
+        describe('NEVER', () => {
+            it('basic filter', () => {
+                const o = new Subject<boolean>();
+                let i = 0;
+                const r = computed(() => $(o) ? i++ : $(NEVER));
+                sub = r.subscribe(observer);
+                expect(observer.next).not.toHaveBeenCalled();
+
+                // ok path
+                o.next(true);
+                expect(observer.next).toHaveBeenCalledWith(0);
+
+                // NEVER path
+                observer.next.mockClear();
+                o.next(false);
+                expect(observer.next).not.toHaveBeenCalled();
+
+                // ok again
+                observer.next.mockClear();
+                o.next(true);
+                expect(observer.next).toHaveBeenCalledWith(1);
+            });
+        });
+
     });
 
     describe('untracked with late emission', () => {
