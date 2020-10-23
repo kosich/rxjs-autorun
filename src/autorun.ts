@@ -29,11 +29,20 @@ const forwardTracker = (tracker: keyof Context): Trackers => {
 export const $ = forwardTracker('$');
 export const _ = forwardTracker('_');
 
-export function autorun<T>(fn: Expression<T>) {
-    return computed<T>(fn).subscribe();
+export function autorun<T>(fn: Expression<T>): Subscription {
+    return combined<T>(fn).subscribe();
 }
 
-export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<T>(observer => {
+export function combined<T>(fn: Expression<T>): Observable<T> {
+    return runner(fn, InputType.Raw);
+}
+
+export function computed<T>(fn: Expression<T>): Observable<T> {
+    return runner(fn, InputType.Distinct).pipe(distinctUntilChanged());
+}
+
+// core function
+const runner = <T>(fn: Expression<T>, inputType: InputType): Observable<T> => new Observable<T>(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
 
     // context to be used for running expression
@@ -188,7 +197,9 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
             let hasSyncError = false;
             let syncError = void 0;
             v.subscription.add(
-                o.pipe(distinctUntilChanged())
+                (inputType == InputType.Distinct
+                    ? o.pipe(distinctUntilChanged())
+                    : o)
                 .subscribe({
                     next(value) {
                         const hadValue = v.hasValue;
@@ -255,9 +266,13 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
             }
         };
     }
-})
-// distinct results for computed
-.pipe(distinctUntilChanged());
+});
+
+// Types
+const enum InputType {
+    Distinct,
+    Raw
+}
 
 type Expression<T> = () => T;
 
