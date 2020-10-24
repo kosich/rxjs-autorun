@@ -834,23 +834,6 @@ describe('autorun', () => {
             expect(observer.complete).toBeCalled();
         });
 
-        // NOTE: THIS SCENARIO DOESN'T WORK NOW
-        xit('will not complete when untracked value completes before it emits when tracking other value', () => {
-            const o = new Subject<number>();
-            const o2 = new BehaviorSubject(2);
-            const r = computed(() => $(o2) + _(o));
-            sub = r.subscribe(observer);
-
-            expect(observer.next).not.toBeCalled();
-            expect(observer.complete).not.toBeCalled();
-
-            // o completes before it emits.
-            // expression will not complete yet because it might be that a new value of o2
-            // will branch around o.
-            o.complete();
-            expect(observer.next).not.toBeCalled();
-            expect(observer.complete).not.toBeCalled();
-        });
     });
 
 
