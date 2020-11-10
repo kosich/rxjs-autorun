@@ -1,4 +1,4 @@
-import { BehaviorSubject, defer, Observable, of, Subject, Subscription, throwError } from 'rxjs';
+import { BehaviorSubject, defer, EMPTY, NEVER, Observable, of, Subject, Subscription, throwError } from 'rxjs';
 import { $, computed, _ } from '../src';
 
 describe('autorun', () => {
@@ -701,6 +701,69 @@ describe('autorun', () => {
                 expect(isO2Subscribed).toBeFalsy();
             });
         });
+
+        describe('NEVER', () => {
+            it('will skip emission with NEVER', () => {
+                const o = new Subject<boolean>();
+                let i = 0;
+                const r = computed(() => $(o) ? i++ : $(NEVER));
+                sub = r.subscribe(observer);
+                expect(observer.next).not.toHaveBeenCalled();
+
+                // ok path
+                o.next(true);
+                expect(observer.next).toHaveBeenCalledWith(0);
+
+                // NEVER path
+                observer.next.mockClear();
+                o.next(false);
+                expect(observer.next).not.toHaveBeenCalled();
+
+                // ok again
+                observer.next.mockClear();
+                o.next(true);
+                expect(observer.next).toHaveBeenCalledWith(1);
+            });
+        });
+
+        describe('EMPTY', () => {
+            it('will complete with sync EMPTY', () => {
+                const o = new Subject<string>();
+                const fn = jest.fn(() => 'hello');
+                const r = computed(() => $(o) + $(EMPTY) + fn());
+                sub = r.subscribe(observer);
+                expect(observer.next).not.toHaveBeenCalled();
+                o.next('pew');
+                // will not proceed to the end
+                expect(observer.next).not.toHaveBeenCalled();
+                // will interrupt before fn()
+                expect(fn).not.toHaveBeenCalled();
+                // will complete
+                expect(observer.complete).toHaveBeenCalled();
+            });
+
+            it('will complete with a-sync EMPTY', () => {
+                const o = new Subject<string>();
+                const asyncEMPTY = new Subject<never>();
+                const fn = jest.fn(() => 'hello');
+                const r = computed(() => $(o) + $(asyncEMPTY) + fn());
+                sub = r.subscribe(observer);
+
+                // proceed
+                o.next('pew');
+                expect(observer.next).not.toBeCalled();
+                expect(observer.complete).not.toBeCalled();
+
+                // completes before it emits
+                asyncEMPTY.complete();
+                // will not proceed to the end
+                expect(observer.next).not.toBeCalled();
+                // will interrupt before fn()
+                expect(fn).not.toHaveBeenCalled();
+                // will complete
+                expect(observer.complete).toBeCalled();
+            });
+        });
     });
 
     describe('untracked with late emission', () => {
@@ -771,22 +834,6 @@ describe('autorun', () => {
             expect(observer.complete).toBeCalled();
         });
 
-        it('will not complete when untracked value completes before it emits when tracking other value', () => {
-            const o = new Subject<number>();
-            const o2 = new BehaviorSubject(2);
-            const r = computed(() => $(o2) + _(o));
-            sub = r.subscribe(observer);
-
-            expect(observer.next).not.toBeCalled();
-            expect(observer.complete).not.toBeCalled();
-
-            // o completes before it emits.
-            // expression will not complete yet because it might be that a new value of o2
-            // will branch around o.
-            o.complete();
-            expect(observer.next).not.toBeCalled();
-            expect(observer.complete).not.toBeCalled();
-        });
     });
 
 
