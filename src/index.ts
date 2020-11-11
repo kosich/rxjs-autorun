@@ -11,7 +11,7 @@ import { Expression, forwardTracker, runner, Tracker, Trackers } from './core';
 export const $ = forwardTracker('$');
 
 /**
- * Function to read latest Observable value inside rxjs-autorun expressions
+ * Function to read latest Observable value (w/o tracking it) inside rxjs-autorun expressions
  *
  * Also provides `.weak`, `.normal` (default), and `.strong` types of tracking
  */
