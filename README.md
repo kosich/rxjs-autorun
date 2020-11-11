@@ -31,17 +31,17 @@ Or **[try it online](https://stackblitz.com/edit/rxjs-autorun-repl?file=index.ts
 
 ```ts
 const o = of(1);
-const r = computed(() => $(o));
+const r = combined(() => $(o));
 r.subscribe(console.log); // > 1
 ```
 
 ### Delayed evaluation:
 
-_`computed` waits for Observable `o` to emit a value_
+_`combined` waits for Observable `o` to emit a value_
 
 ```ts
 const o = new Subject();
-const r = computed(() => $(o));
+const r = combined(() => $(o));
 r.subscribe(console.log);
 o.next('🐈'); // > 🐈
 ```
@@ -53,7 +53,7 @@ _recompute `c` with latest `a` and `b`, only when `b` updates_
 ```ts
 const a = new BehaviorSubject('#');
 const b = new BehaviorSubject(1);
-const c = computed(() => _(a) + $(b));
+const c = combined(() => _(a) + $(b));
 
 c.subscribe(observer); // > #1
 a.next('💡'); // ~no update~
@@ -66,7 +66,7 @@ _use [NEVER](https://rxjs.dev/api/index/const/NEVER) to suspend emission till `s
 
 ```ts
 const source$ = timer(0, 1_000);
-const even$ = computed(() => $(source$) % 2 == 0 ? _(source$) : _(NEVER));
+const even$ = combined(() => $(source$) % 2 == 0 ? _(source$) : _(NEVER));
 ```
 
 ### Switchmap:
@@ -80,8 +80,8 @@ function fetch(x){
 }
 
 const a = timer(0, 1_000);
-const b = computed(() => fetch($(a)));
-const c = computed(() => $($(b)));
+const b = combined(() => fetch($(a)));
+const c = combined(() => $($(b)));
 c.subscribe(console.log);
 // > 📦 1
 // > 📦 2
@@ -94,25 +94,27 @@ c.subscribe(console.log);
 
 To run an expression, you must wrap it in one of these:
 
-- `computed` returns an Observable that will emit evaluation results with each **distinctive update**
+- `combined` returns an Observable that will emit evaluation results
 
-- `autorun` internally subscribes to `computed` and returns the subscription
+- `computed` returns an Observable that will emit **distinct** evaluation results with **distinctive updates**
+
+- `autorun` internally subscribes to `combined` and returns the subscription
 
 E.g:
 
 ```ts
-computed(() => { … });
+combined(() => { … });
 ```
 
 ### 👓 Tracking
 
-You can read values from Observables inside `computed` (or `autorun`) in two ways:
+You can read values from Observables inside `combined` (or `computed`, or `autorun`) in two ways:
 
-- `$(O)` tells `computed` that it should be re-evaluated when `O` emits, with it's latest value
+- `$(O)` tells `combined` that it should be re-evaluated when `O` emits, with it's latest value
 
-- `_(O)` still provides latest value to `computed`, but doesn't enforce re-evaluation with `O` emission
+- `_(O)` still provides latest value to `combined`, but doesn't enforce re-evaluation with `O` emission
 
-Both functions would interrupt midflight if `O` has not emitted before and doesn't produce a value synchronously.
+Both functions would interrupt mid-flight if `O` has not emitted before and doesn't produce a value synchronously.
 
 If you don't want interruptions — try Observables that always contain a value, such as `BehaviorSubject`s, `of`, `startWith`, etc.
 
@@ -127,7 +129,7 @@ So we provide three levels of subscription strength:
 - `normal` - default - will unsubscribe if the latest run of expression didn't use this Observable:
 
   ```ts
-  computed(() => $(a) ? $(b) : 0)
+  combined(() => $(a) ? $(b) : 0)
   ```
 
   when `a` is falsy — `b` is not used and will be **dropped when expression finishes**
@@ -138,7 +140,7 @@ So we provide three levels of subscription strength:
 - `strong` - will keep the subscription for the life of the expression:
 
   ```ts
-  computed(() => $(a) ? $.strong(b) : 0)
+  combined(() => $(a) ? $.strong(b) : 0)
   ```
 
   when `a` is falsy — `b` is not used, but the subscription will be **kept**
@@ -147,20 +149,20 @@ So we provide three levels of subscription strength:
 - `weak` - will unsubscribe eagerly, if waiting for other Observable to emit:
 
   ```ts
-  computed(() => $(a) ? $.weak(b) : $.weak(c));
+  combined(() => $(a) ? $.weak(b) : $.weak(c));
   ```
 
   When `a` is truthy — `c` is not used and we'll wait `b` to emit,
   meanwhile `c` will be unsubscribed eagerly, even before `b` emits
 
-  And vice verca:
+  And vice versa:
   When `a` is falsy — `b` is not used and we'll wait `c` to emit,
   meanwhile `b` will be unsubscribed eagerly, even before `c` emits
 
   Another example:
 
   ```ts
-  computed(() => $(a) ? $(b) + $.weak(c) : $.weak(c))
+  combined(() => $(a) ? $(b) + $.weak(c) : $.weak(c))
   ```
 
   When `a` is falsy — `b` is not used and will be dropped, `c` is used
@@ -182,7 +184,7 @@ Therefore if you create a new Observable on each run of the expression:
 ```ts
 let a = timer(0, 100);
 let b = timer(0, 1000);
-let c = computed(() => $(a) + $(fetch($(b))));
+let c = combined(() => $(a) + $(fetch($(b))));
 
 function fetch(): Observable<any> {
   return ajax.getJSON('…');
@@ -193,18 +195,18 @@ It might lead to unexpected fetches with each `a` emission!
 
 If that's not what we need — we can go two ways:
 
-- create a separate `computed()` that will call `fetch` only when `b` changes — see [switchMap](#switchmap) example for details
+- create a separate `combined()` that will call `fetch` only when `b` changes — see [switchMap](#switchmap) example for details
 
 - use some memoization or caching technique on `fetch` function that would return same Observable, when called with same arguments
 
 ### Side-effects
 
-If an Observable doesn't emit a synchronous value when it is subscribed, the expression will be **interrupted midflight** until the Observable emits.
-So if you must make side-effects inside `computed` — put that after reading from streams:
+If an Observable doesn't emit a synchronous value when it is subscribed, the expression will be **interrupted mid-flight** until the Observable emits.
+So if you must make side-effects inside `combined` — put that after reading from streams:
 
 ```ts
 const o = new Subject();
-computed(() => {
+combined(() => {
   console.log('Hello'); // DANGEROUS: perform a side-effect before reading from stream
   return $(o);          // will fail here since o has not emitted yet
 }).subscribe(console.log);
@@ -221,7 +223,7 @@ o.next('World');
 
 ```ts
 const o = new Subject();
-computed(() => {
+combined(() => {
   let value = $(o); // will fail here since o has not emitted yet
   console.log('Hello'); // SAFE: perform a side-effect after reading from stream
   return value;
@@ -238,7 +240,7 @@ o.next('World');
 
 ### Logic branching
 
-Logic branches might lead to late subscription to a given Observable, because it was not seen on previous runs. And if your Observable doesn't produce a value synchronously when subscribed — then expression will be **interrupted midflight** until any visited Observable from this latest run emits a new value.
+Logic branches might lead to late subscription to a given Observable, because it was not seen on previous runs. And if your Observable doesn't produce a value synchronously when subscribed — then expression will be **interrupted mid-flight** until any visited Observable from this latest run emits a new value.
 
 *We might introduce [alternative APIs](https://github.com/kosich/rxjs-autorun/issues/3) to help with this*
 
@@ -246,12 +248,12 @@ Also note that you might want different handling of unused subscriptions, please
 
 ### Synchronous values skipping
 
-Currently `computed` will skip synchronous emissions and run expression only with latest value emmitted, e.g.:
+Currently `rxjs-autorun` will skip synchronous emissions and run expression only with latest value emitted, e.g.:
 
 ```ts
 const o = of('a', 'b', 'c');
 
-computed(() => $(o)).subscribe(console.log);
+combined(() => $(o)).subscribe(console.log);
 
 /** OUTPUT:
  * > c

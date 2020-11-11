@@ -18,7 +18,7 @@ let context: Context = {
     $: errorTracker
 };
 
-const forwardTracker = (tracker: keyof Context): Trackers => {
+export const forwardTracker = (tracker: keyof Context): Trackers => {
     const r  = (<T>(o: Observable<T>): T => context[tracker](o)) as Trackers;
     r.weak   = o => context[tracker].weak(o);
     r.normal = o => context[tracker].normal(o);
@@ -26,14 +26,7 @@ const forwardTracker = (tracker: keyof Context): Trackers => {
     return r;
 }
 
-export const $ = forwardTracker('$');
-export const _ = forwardTracker('_');
-
-export function autorun<T>(fn: Expression<T>) {
-    return computed<T>(fn).subscribe();
-}
-
-export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<T>(observer => {
+export const runner = <T>(fn: Expression<T>, distinct: boolean = false): Observable<T> => new Observable<T>(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
 
     // context to be used for running expression
@@ -188,7 +181,10 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
             let hasSyncError = false;
             let syncError = void 0;
             v.subscription.add(
-                o.pipe(distinctUntilChanged())
+                ( distinct
+                ? o.pipe(distinctUntilChanged())
+                : o
+                )
                 .subscribe({
                     next(value) {
                         const hadValue = v.hasValue;
@@ -255,11 +251,18 @@ export const computed = <T>(fn: Expression<T>): Observable<T> => new Observable<
             }
         };
     }
-})
-// distinct results for computed
-.pipe(distinctUntilChanged());
+});
 
-type Expression<T> = () => T;
+// Types
+export type Expression<T> = () => T;
+
+export interface Trackers extends Tracker {
+    weak: Tracker;
+    normal: Tracker;
+    strong: Tracker;
+}
+
+export type Tracker = <T>(o: Observable<T>) => T;
 
 interface TrackEntry<V> {
     hasValue: boolean;
@@ -286,11 +289,3 @@ interface Context {
     _: Trackers;
     $: Trackers;
 }
-
-interface Trackers extends Tracker {
-    weak: Tracker;
-    normal: Tracker;
-    strong: Tracker;
-}
-
-type Tracker = <T>(o: Observable<T>) => T;
