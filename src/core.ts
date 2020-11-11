@@ -18,7 +18,7 @@ let context: Context = {
     $: errorTracker
 };
 
-const forwardTracker = (tracker: keyof Context): Trackers => {
+export const forwardTracker = (tracker: keyof Context): Trackers => {
     const r  = (<T>(o: Observable<T>): T => context[tracker](o)) as Trackers;
     r.weak   = o => context[tracker].weak(o);
     r.normal = o => context[tracker].normal(o);
@@ -26,23 +26,7 @@ const forwardTracker = (tracker: keyof Context): Trackers => {
     return r;
 }
 
-export const $ = forwardTracker('$');
-export const _ = forwardTracker('_');
-
-export function autorun<T>(fn: Expression<T>): Subscription {
-    return combined<T>(fn).subscribe();
-}
-
-export function combined<T>(fn: Expression<T>): Observable<T> {
-    return runner(fn);
-}
-
-export function computed<T>(fn: Expression<T>): Observable<T> {
-    return runner(fn, InputType.Distinct).pipe(distinctUntilChanged());
-}
-
-// core function
-const runner = <T>(fn: Expression<T>, inputType: InputType = InputType.Raw): Observable<T> => new Observable<T>(observer => {
+export const runner = <T>(fn: Expression<T>, distinct: boolean = false): Observable<T> => new Observable<T>(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
 
     // context to be used for running expression
@@ -197,7 +181,7 @@ const runner = <T>(fn: Expression<T>, inputType: InputType = InputType.Raw): Obs
             let hasSyncError = false;
             let syncError = void 0;
             v.subscription.add(
-                ( inputType == InputType.Distinct
+                ( distinct
                 ? o.pipe(distinctUntilChanged())
                 : o
                 )
@@ -270,12 +254,15 @@ const runner = <T>(fn: Expression<T>, inputType: InputType = InputType.Raw): Obs
 });
 
 // Types
-const enum InputType {
-    Distinct,
-    Raw
+export type Expression<T> = () => T;
+
+export interface Trackers extends Tracker {
+    weak: Tracker;
+    normal: Tracker;
+    strong: Tracker;
 }
 
-type Expression<T> = () => T;
+export type Tracker = <T>(o: Observable<T>) => T;
 
 interface TrackEntry<V> {
     hasValue: boolean;
@@ -302,11 +289,3 @@ interface Context {
     _: Trackers;
     $: Trackers;
 }
-
-interface Trackers extends Tracker {
-    weak: Tracker;
-    normal: Tracker;
-    strong: Tracker;
-}
-
-type Tracker = <T>(o: Observable<T>) => T;
