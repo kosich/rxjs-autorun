@@ -122,11 +122,11 @@ describe('autorun', () => {
         expect(_.normal).toThrow(e);
     });
 
-    describe('combined undistinct updates', () => {
+    describe('combined — undistinct updates', () => {
         it('should react to repeatetive updates', () => {
             const o = new Subject<number>();
             const fn = jest.fn(() => 0);
-            const r = computed(() => $(o) + fn());
+            const r = combined(() => $(o) + fn());
             sub = r.subscribe(observer);
             o.next(0);
             o.next(0);
@@ -134,7 +134,7 @@ describe('autorun', () => {
         });
     });
 
-    describe('computed distinct updates', () => {
+    describe('computed — distinct updates', () => {
         it('should only react to distinctive value changes', () => {
             const o = new Subject<number>();
             const fn = jest.fn(() => 0);
