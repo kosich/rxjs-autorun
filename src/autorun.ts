@@ -34,7 +34,7 @@ export function autorun<T>(fn: Expression<T>): Subscription {
 }
 
 export function combined<T>(fn: Expression<T>): Observable<T> {
-    return runner(fn, InputType.Raw);
+    return runner(fn);
 }
 
 export function computed<T>(fn: Expression<T>): Observable<T> {
@@ -42,7 +42,7 @@ export function computed<T>(fn: Expression<T>): Observable<T> {
 }
 
 // core function
-const runner = <T>(fn: Expression<T>, inputType: InputType): Observable<T> => new Observable<T>(observer => {
+const runner = <T>(fn: Expression<T>, inputType: InputType = InputType.Raw): Observable<T> => new Observable<T>(observer => {
     const deps = new Map<Observable<unknown>, TrackEntry<unknown>>();
 
     // context to be used for running expression
@@ -197,9 +197,10 @@ const runner = <T>(fn: Expression<T>, inputType: InputType): Observable<T> => ne
             let hasSyncError = false;
             let syncError = void 0;
             v.subscription.add(
-                (inputType == InputType.Distinct
-                    ? o.pipe(distinctUntilChanged())
-                    : o)
+                ( inputType == InputType.Distinct
+                ? o.pipe(distinctUntilChanged())
+                : o
+                )
                 .subscribe({
                     next(value) {
                         const hadValue = v.hasValue;
