@@ -1,6 +1,6 @@
 {
   "name": "rxjs-autorun",
-  "version": "0.0.2-0",
+  "version": "0.0.2",
   "description": "Autorun expressions with RxJS Observables",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
